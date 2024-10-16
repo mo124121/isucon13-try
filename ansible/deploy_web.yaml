@@ -1,0 +1,15 @@
+- name: Build local
+  hosts: localhost
+  tasks:
+    - name: Build
+      ansible.builtin.import_role:
+        name: webapp
+        tasks_from: build
+- name: Deploy remote
+  hosts: webapp
+  remote_user: isucon
+  tasks:
+    - name: Deploy
+      ansible.builtin.import_role:
+        name: webapp
+        tasks_from: deploy

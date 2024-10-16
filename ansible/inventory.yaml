@@ -1,0 +1,14 @@
+all:
+  children:
+    nginx:
+      hosts:
+        nginx01:
+          ansible_host: 18.179.41.134
+    webapp:
+      hosts:
+        webapp01:
+          ansible_host: 18.179.41.134
+    db:
+      hosts:
+        db01:
+          ansible_host: 18.179.41.134
