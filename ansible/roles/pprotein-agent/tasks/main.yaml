@@ -1,0 +1,35 @@
+- name: Ensure pprotein dir exists
+  become: true
+  ansible.builtin.file:
+    path: /opt/pprotein
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+
+- name: Download pprotein
+  become: true
+  ansible.builtin.unarchive:
+    src: https://github.com/kaz/pprotein/releases/download/v1.2.3/pprotein_1.2.3_linux_amd64.tar.gz
+    dest: /opt/pprotein
+    remote_src: true
+
+- name: Create service unit file
+  become: true
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  with_items:
+    - etc/systemd/system/pprotein-agent.service
+
+- name: Start service
+  become: true
+  ansible.builtin.service:
+    name: pprotein-agent.service
+    state: started
+    enabled: true

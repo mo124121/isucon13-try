@@ -1,0 +1,20 @@
+[
+  {
+    "Type": "pprof",
+    "Label": "webapp",
+    "URL": "http://18.179.41.134:8080/debug/pprof/profile",
+    "Duration": 60
+  },
+  {
+    "Type": "httplog",
+    "Label": "nginx",
+    "URL": "http://18.179.41.134:19000/debug/log/httplog",
+    "Duration": 60
+  },
+  {
+    "Type": "slowlog",
+    "Label": "mysql",
+    "URL": "http://18.179.41.134:19000/debug/log/slowlog",
+    "Duration": 60
+  }
+]

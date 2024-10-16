@@ -1,5 +1,6 @@
 - name: Restart webapp
   become: true
+  become_user: root
   ansible.builtin.systemd:
     name: isupipe-go
     state: restarted

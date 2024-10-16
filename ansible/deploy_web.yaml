@@ -7,7 +7,7 @@
         tasks_from: build
 - name: Deploy remote
   hosts: webapp
-  remote_user: isucon
+  become_user: isucon
   tasks:
     - name: Deploy
       ansible.builtin.import_role:
