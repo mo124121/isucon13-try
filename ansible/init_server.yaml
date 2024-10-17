@@ -1,0 +1,11 @@
+---
+- name: Db
+  ansible.builtin.import_playbook: deploy_db.yaml
+- name: Nginx
+  ansible.builtin.import_playbook: deploy_nginx.yaml
+- name: Pprotein_agent
+  ansible.builtin.import_playbook: deploy_pprotein_agent.yaml
+- name: Webapp
+  ansible.builtin.import_playbook: deploy_web.yaml
+- name: Powerdns
+  ansible.builtin.import_playbook: deploy_pdns.yaml

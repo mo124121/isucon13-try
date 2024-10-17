@@ -1,0 +1,5 @@
+- name: Deploy zone
+  become: true
+  ansible.builtin.copy:
+    src: ../webapp/pdns/u.isucon.local.zone
+    dest: /home/isucon/webapp/pdns/

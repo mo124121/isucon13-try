@@ -3,12 +3,16 @@ all:
     nginx:
       hosts:
         nginx01:
-          ansible_host: 18.179.41.134
+          ansible_host: 43.206.223.217
     webapp:
       hosts:
         webapp01:
-          ansible_host: 18.179.41.134
+          ansible_host: 43.206.223.217
     db:
       hosts:
         db01:
-          ansible_host: 18.179.41.134
+          ansible_host: 43.206.223.217
+    pdns:
+      hosts:
+        pdns01:
+          ansible_host: 43.206.223.217

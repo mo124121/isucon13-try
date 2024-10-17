@@ -1,0 +1,6 @@
+- name: Deploy pdns
+  hosts: pdns
+  tasks:
+    - name: Import pdns role
+      ansible.builtin.import_role:
+        name: pdns
