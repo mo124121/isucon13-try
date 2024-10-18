@@ -1,4 +1,6 @@
 ---
+- name: Env
+  ansible.builtin.import_playbook: deploy_env.yaml
 - name: Db
   ansible.builtin.import_playbook: deploy_db.yaml
 - name: Nginx

@@ -1,0 +1,6 @@
+- name: Deploy env
+  hosts: all
+  tasks:
+    - name: Import env role
+      ansible.builtin.import_role:
+        name: env
