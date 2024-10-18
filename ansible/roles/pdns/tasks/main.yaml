@@ -1,5 +1,21 @@
-- name: Deploy zone
+- name: Ensure sql dir exists
+  become: true
+  ansible.builtin.file:
+    path: /home/isucon/webapp/pdns/initdb.d
+    state: directory
+    owner: isucon
+    group: isucon
+    mode: "0775"
+
+- name: Deploy files
   become: true
   ansible.builtin.copy:
-    src: ../webapp/pdns/u.isucon.local.zone
-    dest: /home/isucon/webapp/pdns/
+    src: "../{{ item }}"
+    dest: "/home/isucon/{{ item }}"
+    owner: isucon
+    group: isucon
+  with_items:
+    - webapp/pdns/u.isucon.local.zone
+    - webapp/pdns/init_zone.sh
+    - webapp/pdns/initdb.d/00_create_database.sql
+    - webapp/pdns/initdb.d/10_schema.sql

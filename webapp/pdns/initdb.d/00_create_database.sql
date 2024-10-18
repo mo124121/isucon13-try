@@ -1,0 +1,6 @@
+DROP DATABASE IF EXISTS `isudns`;
+CREATE DATABASE IF NOT EXISTS `isudns`;
+
+DROP USER IF EXISTS `isudns`@`%`;
+CREATE USER isudns IDENTIFIED BY 'isudns';
+GRANT ALL PRIVILEGES ON isudns.* TO 'isudns'@'%';
