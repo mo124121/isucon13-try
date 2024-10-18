@@ -8,7 +8,8 @@ CREATE TABLE domains (
   account               VARCHAR(40) CHARACTER SET 'utf8' DEFAULT NULL,
   options               VARCHAR(64000) DEFAULT NULL,
   catalog               VARCHAR(255) DEFAULT NULL,
-  PRIMARY KEY (id)
+  PRIMARY KEY (id),
+  INDEX (name)
 ) Engine=InnoDB CHARACTER SET 'latin1';
 
 CREATE UNIQUE INDEX name_index ON domains(name);
@@ -26,7 +27,8 @@ CREATE TABLE records (
   disabled              TINYINT(1) DEFAULT 0,
   ordername             VARCHAR(255) BINARY DEFAULT NULL,
   auth                  TINYINT(1) DEFAULT 1,
-  PRIMARY KEY (id)
+  PRIMARY KEY (id),
+  INDEX (name)
 ) Engine=InnoDB CHARACTER SET 'latin1';
 
 CREATE INDEX nametype_index ON records(name,type);
