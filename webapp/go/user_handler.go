@@ -105,6 +105,28 @@ func getIconHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
 	}
 
+	var iconHash string
+	// icon_hashをDBから取得
+	if err := tx.GetContext(ctx, &iconHash, "SELECT icon_hash FROM icons WHERE user_id = ?", user.ID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// fallbackIconHashを利用
+			fallbackHash, calcErr := calculateFallbackHash()
+			if calcErr != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "failed to calculate fallback icon hash: "+calcErr.Error())
+			}
+			iconHash = fallbackHash
+		} else {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user icon hash: "+err.Error())
+		}
+	}
+
+	// If-None-Match ヘッダーを確認し、icon_hash と一致する場合は 304 を返す
+	ifNoneMatch := c.Request().Header.Get("If-None-Match")
+	if ifNoneMatch == fmt.Sprintf(`"%s"`, iconHash) {
+		return c.NoContent(http.StatusNotModified)
+	}
+
+	// 画像データを取得
 	var image []byte
 	if err := tx.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", user.ID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -113,6 +135,9 @@ func getIconHandler(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user icon: "+err.Error())
 		}
 	}
+
+	// ETag ヘッダーに icon_hash を設定
+	c.Response().Header().Set("ETag", fmt.Sprintf(`"%s"`, iconHash))
 
 	return c.Blob(http.StatusOK, "image/jpeg", image)
 }

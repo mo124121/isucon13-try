@@ -19,25 +19,6 @@ CREATE TABLE `icons` (
   INDEX(`user_id`)
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
--- アイコンのハッシュ作成トリガー
-DELIMITER $$
-CREATE TRIGGER update_icons
-BEFORE UPDATE ON `icons`
-FOR EACH ROW
-BEGIN
-  SET NEW.icon_hash = SHA2(NEW.image, 256);
-END
-$$
-
-CREATE TRIGGER insert_icons
-BEFORE INSERT ON `icons`
-FOR EACH ROW
-BEGIN
-  SET NEW.icon_hash = SHA2(NEW.image, 256);
-END
-$$
-DELIMITER ;
-
 -- ユーザごとのカスタムテーマ
 CREATE TABLE `themes` (
   `id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -136,3 +117,25 @@ CREATE TABLE `reactions` (
   INDEX(`user_id`),
   INDEX(`livestream_id`)
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
+
+
+-- トリガー
+DELIMITER $$
+-- アイコンのハッシュ作成トリガー
+CREATE TRIGGER update_icons
+BEFORE UPDATE ON `icons`
+FOR EACH ROW
+BEGIN
+  SET NEW.icon_hash = SHA2(NEW.image, 256);
+END
+$$
+
+CREATE TRIGGER insert_icons
+BEFORE INSERT ON `icons`
+FOR EACH ROW
+BEGIN
+  SET NEW.icon_hash = SHA2(NEW.image, 256);
+END
+$$
+
+DELIMITER ;
