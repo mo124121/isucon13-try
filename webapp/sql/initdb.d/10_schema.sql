@@ -36,7 +36,8 @@ CREATE TABLE `livestreams` (
   `thumbnail_url` VARCHAR(255) NOT NULL,
   `start_at` BIGINT NOT NULL,
   `end_at` BIGINT NOT NULL,
-  INDEX(`user_id`)
+  INDEX(`user_id`),
+  INDEX(`user_id`,`id`)
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
 -- ライブ配信予約枠
