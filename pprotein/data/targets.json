@@ -2,19 +2,19 @@
   {
     "Type": "pprof",
     "Label": "webapp",
-    "URL": "http://43.206.223.217:8080/debug/pprof/profile",
+    "URL": "http://52.68.30.27:8080/debug/pprof/profile",
     "Duration": 90
   },
   {
     "Type": "httplog",
     "Label": "nginx",
-    "URL": "http://43.206.223.217:19000/debug/log/httplog",
+    "URL": "http://52.68.30.27:19000/debug/log/httplog",
     "Duration": 90
   },
   {
     "Type": "slowlog",
     "Label": "mysql",
-    "URL": "http://43.206.223.217:19000/debug/log/slowlog",
+    "URL": "http://52.68.30.27:19000/debug/log/slowlog",
     "Duration": 90
   }
 ]

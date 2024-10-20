@@ -19,3 +19,8 @@
     - webapp/pdns/init_zone.sh
     - webapp/pdns/initdb.d/00_create_database.sql
     - webapp/pdns/initdb.d/10_schema.sql
+
+- name: Init DB
+  become: true
+  shell: |
+    /home/isucon/webapp/pdns/init_zone.sh

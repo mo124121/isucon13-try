@@ -1,18 +1,23 @@
 all:
   children:
-    nginx:
+    target:
+      nginx:
+        hosts:
+          nginx01:
+            ansible_host: 52.68.30.27
+      webapp:
+        hosts:
+          webapp01:
+            ansible_host: 52.68.30.27
+      db:
+        hosts:
+          db01:
+            ansible_host: 52.68.30.27
+      pdns:
+        hosts:
+          pdns01:
+            ansible_host: 52.68.30.27
+    outsider:
       hosts:
-        nginx01:
-          ansible_host: 43.206.223.217
-    webapp:
-      hosts:
-        webapp01:
-          ansible_host: 43.206.223.217
-    db:
-      hosts:
-        db01:
-          ansible_host: 43.206.223.217
-    pdns:
-      hosts:
-        pdns01:
-          ansible_host: 43.206.223.217
+        benchmarker:
+          ansible_host: 13.230.223.90

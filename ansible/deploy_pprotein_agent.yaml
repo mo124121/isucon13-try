@@ -1,5 +1,5 @@
 - name: Deploy pprotein agent
-  hosts: all
+  hosts: target
   tasks:
     - name: Import pprotein role
       ansible.builtin.import_role:
