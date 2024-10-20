@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -398,23 +399,42 @@ func verifyUserSession(c echo.Context) error {
 	return nil
 }
 
+var fallbackIconHash string
+var once sync.Once
+
+func calculateFallbackHash() (string, error) {
+	var err error
+	once.Do(func() {
+		image, readErr := os.ReadFile(fallbackImage)
+		if readErr != nil {
+			err = readErr
+			return
+		}
+		hash := sha256.Sum256(image)
+		fallbackIconHash = fmt.Sprintf("%x", hash)
+	})
+	return fallbackIconHash, err
+}
+
 func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (User, error) {
 	themeModel := ThemeModel{}
 	if err := tx.GetContext(ctx, &themeModel, "SELECT * FROM themes WHERE user_id = ?", userModel.ID); err != nil {
 		return User{}, err
 	}
 
-	var image []byte
-	if err := tx.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", userModel.ID); err != nil {
+	var iconHash string
+	// icon_hashをDBから取得
+	if err := tx.GetContext(ctx, &iconHash, "SELECT icon_hash FROM icons WHERE user_id = ?", userModel.ID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return User{}, err
 		}
-		image, err = os.ReadFile(fallbackImage)
-		if err != nil {
-			return User{}, err
+		// iconがDBにない場合はfallbackIconHashを使用
+		fallbackHash, calcErr := calculateFallbackHash()
+		if calcErr != nil {
+			return User{}, calcErr
 		}
+		iconHash = fallbackHash
 	}
-	iconHash := sha256.Sum256(image)
 
 	user := User{
 		ID:          userModel.ID,
@@ -425,7 +445,7 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 			ID:       themeModel.ID,
 			DarkMode: themeModel.DarkMode,
 		},
-		IconHash: fmt.Sprintf("%x", iconHash),
+		IconHash: iconHash,
 	}
 
 	return user, nil
