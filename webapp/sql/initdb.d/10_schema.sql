@@ -47,7 +47,7 @@ CREATE TABLE `reservation_slots` (
   `slot` BIGINT NOT NULL,
   `start_at` BIGINT NOT NULL,
   `end_at` BIGINT NOT NULL,
-  INDEX(`start_at`)
+  INDEX(`end_at`)
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
 -- ライブストリームに付与される、サービスで定義されたタグ
@@ -62,7 +62,8 @@ CREATE TABLE `livestream_tags` (
   `id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   `livestream_id` BIGINT NOT NULL,
   `tag_id` BIGINT NOT NULL,
-  INDEX(`livestream_id`)
+  INDEX(`livestream_id`),
+  INDEX(`tag_id`,`livestream_id`)
 ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
 -- ライブ配信視聴履歴
