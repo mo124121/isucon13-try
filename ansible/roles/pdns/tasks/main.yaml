@@ -7,7 +7,39 @@
     group: isucon
     mode: "0775"
 
-- name: Deploy files
+- name: Install dnsdist
+  become: true
+  ansible.builtin.apt:
+    name:
+      - dnsdist
+    state: present
+    update_cache: true
+
+- name: Deploy dnsdist conf files
+  become: true
+  ansible.builtin.copy:
+    src: "../webapp/pdns/{{ item }}"
+    dest: "/{{ item }}"
+    owner: root
+    group: root
+    mode: "0544"
+  with_items:
+    - etc/dnsdist/dnsdist.conf
+  notify: restart_dnsdist
+
+- name: Deploy pdns conf files
+  become: true
+  ansible.builtin.copy:
+    src: "../webapp/pdns/{{ item }}"
+    dest: "/{{ item }}"
+    owner: root
+    group: root
+  with_items:
+    - etc/powerdns/pdns.d/port.conf
+  notify: restart_pdns
+
+
+- name: Deploy record files
   become: true
   ansible.builtin.copy:
     src: "../{{ item }}"

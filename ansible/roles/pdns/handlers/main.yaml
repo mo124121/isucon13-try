@@ -1,0 +1,16 @@
+- name: Restart pdns
+  become: true
+  systemd:
+    name: pdns
+    state: restarted
+    daemon_reload: true
+  listen: restart_pdns
+
+- name: Restart dnsdist
+  become: true
+  systemd:
+    name: dnsdist
+    state: restarted
+    daemon_reload: true
+  listen: restart_dnsdist
+  
