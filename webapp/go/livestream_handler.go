@@ -527,16 +527,19 @@ func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel Li
 }
 
 func preloadLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModels []*LivestreamModel) ([]Livestream, error) {
-	// livestream IDs を抽出
-	livestreamIDs := make([]int64, len(livestreamModels))
+	if len(livestreamModels) == 0 {
+		return make([]Livestream, 0), nil
+	}
 
+	// livestream IDs と user IDs を抽出
+	livestreamIDs := make([]int64, len(livestreamModels))
 	userIDs := make([]int64, len(livestreamModels))
 	for i, livestream := range livestreamModels {
 		livestreamIDs[i] = livestream.ID
 		userIDs[i] = livestream.UserID
 	}
 
-	// ユーザを一括ロード
+	// ユーザー情報を一括ロード
 	var ownerModels []UserModel
 	query, args, err := sqlx.In("SELECT * FROM users WHERE id IN (?)", userIDs)
 	if err != nil {
@@ -557,7 +560,6 @@ func preloadLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel
 		TagName      string `db:"name"`
 		LivestreamID int64  `db:"livestream_id"`
 	}
-
 	query, args, err = sqlx.In(`
 		SELECT t.id, t.name, l.livestream_id 
 		FROM livestream_tags l 
@@ -578,27 +580,81 @@ func preloadLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel
 		})
 	}
 
-	// 最終的なLivestream構造体を作成
+	// ユーザーのテーマとアイコンをプリロード
+	var themeModels []ThemeModel
+	query, args, err = sqlx.In("SELECT * FROM themes WHERE user_id IN (?)", userIDs)
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to build theme query: "+err.Error())
+	}
+	if err := tx.SelectContext(ctx, &themeModels, tx.Rebind(query), args...); err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to load themes: "+err.Error())
+	}
+	themeMap := make(map[int64]ThemeModel, len(themeModels))
+	for _, theme := range themeModels {
+		themeMap[theme.UserID] = theme
+	}
+
+	var iconResults []struct {
+		UserID   int64  `db:"user_id"`
+		IconHash string `db:"icon_hash"`
+	}
+	query, args, err = sqlx.In("SELECT user_id, icon_hash FROM icons WHERE user_id IN (?)", userIDs)
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to build icon query: "+err.Error())
+	}
+	if err := tx.SelectContext(ctx, &iconResults, tx.Rebind(query), args...); err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to load icons: "+err.Error())
+	}
+	iconMap := make(map[int64]string, len(iconResults))
+	for _, icon := range iconResults {
+		iconMap[icon.UserID] = icon.IconHash
+	}
+
+	// Livestreamレスポンスを作成
 	livestreams := make([]Livestream, len(livestreamModels))
 	for i, livestreamModel := range livestreamModels {
 		ownerModel, ok := userMap[livestreamModel.UserID]
 		if !ok {
 			return nil, echo.NewHTTPError(http.StatusInternalServerError, "owner not found for livestream")
 		}
-		owner, err := fillUserResponse(ctx, tx, ownerModel)
-		if err != nil {
-			return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to fill user response: "+err.Error())
+
+		// テーマとアイコンの取得
+		themeModel, themeOk := themeMap[livestreamModel.UserID]
+		if !themeOk {
+			themeModel = ThemeModel{DarkMode: false}
 		}
-		var tag = tagMap[livestreamModel.ID]
-		if tag == nil {
-			tag = make([]Tag, 0)
+
+		iconHash, iconOk := iconMap[livestreamModel.UserID]
+		if !iconOk {
+			fallbackHash, calcErr := calculateFallbackHash()
+			if calcErr != nil {
+				return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to calculate fallback icon hash: "+calcErr.Error())
+			}
+			iconHash = fallbackHash
+		}
+
+		owner := User{
+			ID:          ownerModel.ID,
+			Name:        ownerModel.Name,
+			DisplayName: ownerModel.DisplayName,
+			Description: ownerModel.Description,
+			Theme: Theme{
+				ID:       themeModel.ID,
+				DarkMode: themeModel.DarkMode,
+			},
+			IconHash: iconHash,
+		}
+
+		tags := tagMap[livestreamModel.ID]
+		if tags == nil {
+			tags = make([]Tag, 0)
 		}
 
 		livestreams[i] = Livestream{
 			ID:           livestreamModel.ID,
 			Owner:        owner,
 			Title:        livestreamModel.Title,
-			Tags:         tag,
+			Tags:         tags,
 			Description:  livestreamModel.Description,
 			PlaylistUrl:  livestreamModel.PlaylistUrl,
 			ThumbnailUrl: livestreamModel.ThumbnailUrl,
