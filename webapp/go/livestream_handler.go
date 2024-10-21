@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -229,8 +230,23 @@ func searchLivestreamsHandler(c echo.Context) error {
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
 	}
+	// debugLivestreams(livestreams)
 
 	return c.JSON(http.StatusOK, livestreams)
+}
+
+func debugLivestreams(livestreams []Livestream) {
+	for _, livestream := range livestreams {
+		// タグIDと名前を "(ID:Name)" 形式で取得してカンマで結合
+		tagDetails := make([]string, len(livestream.Tags))
+		for i, tag := range livestream.Tags {
+			tagDetails[i] = fmt.Sprintf("(%d:%s)", tag.ID, tag.Name)
+		}
+		tagsString := strings.Join(tagDetails, ", ")
+
+		// タグを含めて出力
+		fmt.Printf("ID: %d, Owner: %s, Tags: %s\n", livestream.ID, livestream.Owner.Name, tagsString)
+	}
 }
 
 func getMyLivestreamsHandler(c echo.Context) error {
@@ -511,14 +527,98 @@ func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel Li
 }
 
 func preloadLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModels []*LivestreamModel) ([]Livestream, error) {
+	// livestream IDs を抽出
+	livestreamIDs := make([]int64, len(livestreamModels))
+
+	userIDs := make([]int64, len(livestreamModels))
+	for i, livestream := range livestreamModels {
+		livestreamIDs[i] = livestream.ID
+		userIDs[i] = livestream.UserID
+	}
+
+	// ユーザを一括ロード
+	var ownerModels []UserModel
+	query, args, err := sqlx.In("SELECT * FROM users WHERE id IN (?)", userIDs)
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to build user query: "+err.Error())
+	}
+	if err := tx.SelectContext(ctx, &ownerModels, tx.Rebind(query), args...); err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to load users: "+err.Error())
+	}
+	// UserID -> UserModelのマッピングを作成
+	userMap := make(map[int64]UserModel, len(ownerModels))
+	for _, owner := range ownerModels {
+		userMap[owner.ID] = owner
+	}
+
+	// タグを一括ロード
+	var tagResults []struct {
+		TagID        int64  `db:"id"`
+		TagName      string `db:"name"`
+		LivestreamID int64  `db:"livestream_id"`
+	}
+
+	query, args, err = sqlx.In(`
+		SELECT t.id, t.name, l.livestream_id 
+		FROM livestream_tags l 
+		JOIN tags t ON l.tag_id = t.id 
+		WHERE l.livestream_id IN (?)`, livestreamIDs)
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to build tag query: "+err.Error())
+	}
+	if err := tx.SelectContext(ctx, &tagResults, tx.Rebind(query), args...); err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to load tags: "+err.Error())
+	}
+	// LivestreamID -> []Tagのマッピングを作成
+	tagMap := make(map[int64][]Tag, len(livestreamIDs))
+	for _, tagModel := range tagResults {
+		tagMap[tagModel.LivestreamID] = append(tagMap[tagModel.LivestreamID], Tag{
+			ID:   tagModel.TagID,
+			Name: tagModel.TagName,
+		})
+	}
+
+	// 最終的なLivestream構造体を作成
 	livestreams := make([]Livestream, len(livestreamModels))
-	for i := range livestreamModels {
-		livestream, err := fillLivestreamResponse(ctx, tx, *livestreamModels[i])
-		if err != nil {
-			return make([]Livestream, 0), echo.NewHTTPError(http.StatusInternalServerError, "failed to fill livestream: "+err.Error())
+	for i, livestreamModel := range livestreamModels {
+		ownerModel, ok := userMap[livestreamModel.UserID]
+		if !ok {
+			return nil, echo.NewHTTPError(http.StatusInternalServerError, "owner not found for livestream")
 		}
-		livestreams[i] = livestream
+		owner, err := fillUserResponse(ctx, tx, ownerModel)
+		if err != nil {
+			return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to fill user response: "+err.Error())
+		}
+		var tag = tagMap[livestreamModel.ID]
+		if tag == nil {
+			tag = make([]Tag, 0)
+		}
+
+		livestreams[i] = Livestream{
+			ID:           livestreamModel.ID,
+			Owner:        owner,
+			Title:        livestreamModel.Title,
+			Tags:         tag,
+			Description:  livestreamModel.Description,
+			PlaylistUrl:  livestreamModel.PlaylistUrl,
+			ThumbnailUrl: livestreamModel.ThumbnailUrl,
+			StartAt:      livestreamModel.StartAt,
+			EndAt:        livestreamModel.EndAt,
+		}
 	}
 
 	return livestreams, nil
+}
+
+func debugLivestream(livestream Livestream) {
+	// タグ情報を"(ID:Name)"形式に変換してカンマで結合
+	tagDetails := make([]string, len(livestream.Tags))
+	for i, tag := range livestream.Tags {
+		tagDetails[i] = fmt.Sprintf("(%d:%s)", tag.ID, tag.Name)
+	}
+	tagsString := strings.Join(tagDetails, ", ")
+
+	// 1行で全てのフィールドを出力
+	fmt.Printf("Livestream ID: %d, Owner: %+v, Title: %s, Description: %s, Playlist URL: %s, Thumbnail URL: %s, Tags: [%s], Start At: %d, End At: %d\n",
+		livestream.ID, livestream.Owner, livestream.Title, livestream.Description, livestream.PlaylistUrl, livestream.ThumbnailUrl, tagsString, livestream.StartAt, livestream.EndAt)
 }
