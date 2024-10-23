@@ -66,14 +66,9 @@ func getReactionsHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "failed to get reactions")
 	}
 
-	reactions := make([]Reaction, len(reactionModels))
-	for i := range reactionModels {
-		reaction, err := fillReactionResponse(ctx, tx, reactionModels[i])
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill reaction: "+err.Error())
-		}
-
-		reactions[i] = reaction
+	reactions, err := preploadReactionResponse(ctx, tx, reactionModels)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "failed to fill reactions")
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -169,4 +164,17 @@ func fillReactionResponse(ctx context.Context, tx *sqlx.Tx, reactionModel Reacti
 	}
 
 	return reaction, nil
+}
+
+func preploadReactionResponse(ctx context.Context, tx *sqlx.Tx, reactionModels []ReactionModel) ([]Reaction, error) {
+	reactions := make([]Reaction, len(reactionModels))
+	for i := range reactionModels {
+		reaction, err := fillReactionResponse(ctx, tx, reactionModels[i])
+		if err != nil {
+			return make([]Reaction, 0), err
+		}
+
+		reactions[i] = reaction
+	}
+	return reactions, nil
 }
