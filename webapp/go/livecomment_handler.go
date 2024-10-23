@@ -102,14 +102,9 @@ func getLivecommentsHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livecomments: "+err.Error())
 	}
 
-	livecomments := make([]Livecomment, len(livecommentModels))
-	for i := range livecommentModels {
-		livecomment, err := fillLivecommentResponse(ctx, tx, livecommentModels[i])
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fil livecomments: "+err.Error())
-		}
-
-		livecomments[i] = livecomment
+	livecomments, err := preloadLivecommentResponse(ctx, tx, livecommentModels)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "faild to fill livecomments: "+err.Error())
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -445,6 +440,18 @@ func fillLivecommentResponse(ctx context.Context, tx *sqlx.Tx, livecommentModel 
 	}
 
 	return livecomment, nil
+}
+
+func preloadLivecommentResponse(ctx context.Context, tx *sqlx.Tx, livecommentModels []LivecommentModel) ([]Livecomment, error) {
+	livecomments := make([]Livecomment, len(livecommentModels))
+	for i := range livecommentModels {
+		livecomment, err := fillLivecommentResponse(ctx, tx, livecommentModels[i])
+		if err != nil {
+			return nil, err
+		}
+		livecomments[i] = livecomment
+	}
+	return livecomments, nil
 }
 
 func fillLivecommentReportResponse(ctx context.Context, tx *sqlx.Tx, reportModel LivecommentReportModel) (LivecommentReport, error) {
