@@ -444,12 +444,53 @@ func fillLivecommentResponse(ctx context.Context, tx *sqlx.Tx, livecommentModel 
 
 func preloadLivecommentResponse(ctx context.Context, tx *sqlx.Tx, livecommentModels []LivecommentModel) ([]Livecomment, error) {
 	livecomments := make([]Livecomment, len(livecommentModels))
-	for i := range livecommentModels {
-		livecomment, err := fillLivecommentResponse(ctx, tx, livecommentModels[i])
-		if err != nil {
-			return nil, err
+	if len(livecommentModels) == 0 {
+		return livecomments, nil
+	}
+
+	// VALIDATE 全てのcommentが同じlivestreamIDsを持つことを確認
+	livestreamIDset := make(map[int64]struct{})
+	for _, livecommentmodel := range livecommentModels {
+		livestreamIDset[livecommentmodel.LivestreamID] = struct{}{}
+	}
+	if len(livestreamIDset) > 1 {
+		panic("INVALID INPUT")
+	}
+
+	var livestreamID int64 = 0
+	for id := range livestreamIDset {
+		livestreamID = id
+	}
+	livestreamModel := LivestreamModel{}
+	if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", livestreamID); err != nil {
+		return make([]Livecomment, 0), err
+	}
+	livestream, err := fillLivestreamResponse(ctx, tx, livestreamModel)
+	if err != nil {
+		return make([]Livecomment, 0), err
+	}
+
+	// user IDsを抽出
+	userIDs := make([]int64, len(livecommentModels))
+	for i, livecomment := range livecommentModels {
+		userIDs[i] = livecomment.UserID
+	}
+
+	// userの一括取得
+	users, err := getUsers(ctx, tx, userIDs)
+	if err != nil {
+		return make([]Livecomment, 0), err
+	}
+
+	for i, livecommentModel := range livecommentModels {
+		livecomments[i] = Livecomment{
+			ID:         livecommentModel.ID,
+			User:       users[i],
+			Livestream: livestream,
+			Comment:    livecommentModel.Comment,
+			Tip:        livecommentModel.Tip,
+			CreatedAt:  livecommentModel.CreatedAt,
 		}
-		livecomments[i] = livecomment
 	}
 	return livecomments, nil
 }
