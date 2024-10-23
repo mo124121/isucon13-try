@@ -539,19 +539,10 @@ func preloadLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel
 		userIDs[i] = livestream.UserID
 	}
 
-	// ユーザー情報を一括ロード
-	var ownerModels []UserModel
-	query, args, err := sqlx.In("SELECT * FROM users WHERE id IN (?)", userIDs)
+	// userの一括取得
+	users, err := getUsers(ctx, tx, userIDs)
 	if err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to build user query: "+err.Error())
-	}
-	if err := tx.SelectContext(ctx, &ownerModels, tx.Rebind(query), args...); err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to load users: "+err.Error())
-	}
-	// UserID -> UserModelのマッピングを作成
-	userMap := make(map[int64]UserModel, len(ownerModels))
-	for _, owner := range ownerModels {
-		userMap[owner.ID] = owner
+		return make([]Livestream, 0), err
 	}
 
 	// タグを一括ロード
@@ -560,7 +551,7 @@ func preloadLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel
 		TagName      string `db:"name"`
 		LivestreamID int64  `db:"livestream_id"`
 	}
-	query, args, err = sqlx.In(`
+	query, args, err := sqlx.In(`
 		SELECT t.id, t.name, l.livestream_id 
 		FROM livestream_tags l 
 		JOIN tags t ON l.tag_id = t.id 
@@ -580,70 +571,11 @@ func preloadLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel
 		})
 	}
 
-	// ユーザーのテーマとアイコンをプリロード
-	var themeModels []ThemeModel
-	query, args, err = sqlx.In("SELECT * FROM themes WHERE user_id IN (?)", userIDs)
-	if err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to build theme query: "+err.Error())
-	}
-	if err := tx.SelectContext(ctx, &themeModels, tx.Rebind(query), args...); err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to load themes: "+err.Error())
-	}
-	themeMap := make(map[int64]ThemeModel, len(themeModels))
-	for _, theme := range themeModels {
-		themeMap[theme.UserID] = theme
-	}
-
-	var iconResults []struct {
-		UserID   int64  `db:"user_id"`
-		IconHash string `db:"icon_hash"`
-	}
-	query, args, err = sqlx.In("SELECT user_id, icon_hash FROM icons WHERE user_id IN (?)", userIDs)
-	if err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to build icon query: "+err.Error())
-	}
-	if err := tx.SelectContext(ctx, &iconResults, tx.Rebind(query), args...); err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to load icons: "+err.Error())
-	}
-	iconMap := make(map[int64]string, len(iconResults))
-	for _, icon := range iconResults {
-		iconMap[icon.UserID] = icon.IconHash
-	}
-
 	// Livestreamレスポンスを作成
 	livestreams := make([]Livestream, len(livestreamModels))
 	for i, livestreamModel := range livestreamModels {
-		ownerModel, ok := userMap[livestreamModel.UserID]
-		if !ok {
-			return nil, echo.NewHTTPError(http.StatusInternalServerError, "owner not found for livestream")
-		}
 
-		// テーマとアイコンの取得
-		themeModel, themeOk := themeMap[livestreamModel.UserID]
-		if !themeOk {
-			themeModel = ThemeModel{DarkMode: false}
-		}
-
-		iconHash, iconOk := iconMap[livestreamModel.UserID]
-		if !iconOk {
-			fallbackHash, calcErr := calculateFallbackHash()
-			if calcErr != nil {
-				return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to calculate fallback icon hash: "+calcErr.Error())
-			}
-			iconHash = fallbackHash
-		}
-
-		owner := User{
-			ID:          ownerModel.ID,
-			Name:        ownerModel.Name,
-			DisplayName: ownerModel.DisplayName,
-			Description: ownerModel.Description,
-			Theme: Theme{
-				ID:       themeModel.ID,
-				DarkMode: themeModel.DarkMode,
-			},
-			IconHash: iconHash,
-		}
+		owner := users[i]
 
 		tags := tagMap[livestreamModel.ID]
 		if tags == nil {

@@ -475,3 +475,82 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 
 	return user, nil
 }
+
+func getUsers(ctx context.Context, tx *sqlx.Tx, userIDs []int64) ([]User, error) {
+	users := make([]User, len(userIDs))
+	if len(userIDs) == 0 {
+		return users, nil
+	}
+	var userModels []UserModel
+	query, args, err := sqlx.In("SELECT * FROM users WHERE id IN (?)", userIDs)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.SelectContext(ctx, &userModels, tx.Rebind(query), args...); err != nil {
+		return nil, err
+	}
+	// UserID -> UserModelのマッピングを作成
+	userMap := make(map[int64]UserModel, len(userModels))
+	for _, owner := range userModels {
+		userMap[owner.ID] = owner
+	}
+
+	// ユーザーのテーマとアイコンをプリロード
+	var themeModels []ThemeModel
+	query, args, err = sqlx.In("SELECT * FROM themes WHERE user_id IN (?)", userIDs)
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to build theme query: "+err.Error())
+	}
+	if err := tx.SelectContext(ctx, &themeModels, tx.Rebind(query), args...); err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to load themes: "+err.Error())
+	}
+	themeMap := make(map[int64]ThemeModel, len(themeModels))
+	for _, theme := range themeModels {
+		themeMap[theme.UserID] = theme
+	}
+
+	var iconResults []struct {
+		UserID   int64  `db:"user_id"`
+		IconHash string `db:"icon_hash"`
+	}
+	query, args, err = sqlx.In("SELECT user_id, icon_hash FROM icons WHERE user_id IN (?)", userIDs)
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to build icon query: "+err.Error())
+	}
+	if err := tx.SelectContext(ctx, &iconResults, tx.Rebind(query), args...); err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to load icons: "+err.Error())
+	}
+	iconMap := make(map[int64]string, len(iconResults))
+
+	for _, icon := range iconResults {
+		iconMap[icon.UserID] = icon.IconHash
+	}
+
+	for i, id := range userIDs {
+		userModel := userMap[id]
+		themeModel := themeMap[id]
+		iconhash, err := calculateFallbackHash()
+		if err != nil {
+			return make([]User, 0), err
+		}
+
+		if value, exists := iconMap[id]; exists {
+			iconhash = value
+		}
+
+		users[i] = User{
+			ID:          userModel.ID,
+			Name:        userModel.Name,
+			DisplayName: userModel.DisplayName,
+			Description: userModel.Description,
+			Theme: Theme{
+				ID:       themeModel.ID,
+				DarkMode: themeModel.DarkMode,
+			},
+			IconHash: iconhash,
+		}
+	}
+
+	return users, nil
+
+}
