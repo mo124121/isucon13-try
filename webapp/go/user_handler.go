@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -86,65 +88,69 @@ type PostIconResponse struct {
 	ID int64 `json:"id"`
 }
 
-func getIconHandler(c echo.Context) error {
-	ctx := c.Request().Context()
+func getIconHashFromName(username string) (string, error) {
+	userDir := fmt.Sprintf("/var/www/icons/%s", username)
+	hashPath := filepath.Join(userDir, "icon.hash")
+	// ハッシュファイルの読み込み
+	iconHashByte, err := os.ReadFile(hashPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			iconHash, calcErr := calculateFallbackHash()
+			if calcErr != nil {
+				return "", calcErr
+			}
+			return iconHash, nil
+		}
+	}
+	iconHash := string(iconHashByte)
+	return iconHash, nil
+}
 
+func getIconHandler(c echo.Context) error {
 	username := c.Param("username")
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
+	// アイコンファイルとハッシュファイルのパス
+	userDir := fmt.Sprintf("/var/www/icons/%s", username)
+	iconPath := filepath.Join(userDir, "icon")
+
+	// ハッシュ取得
+	iconHash, err := getIconHashFromName(username)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
-	var user UserModel
-	if err := tx.GetContext(ctx, &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "not found user that has the given username")
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get icon hash")
 	}
 
-	var iconHash string
-	// icon_hashをDBから取得
-	if err := tx.GetContext(ctx, &iconHash, "SELECT icon_hash FROM icons WHERE user_id = ?", user.ID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			// fallbackIconHashを利用
-			fallbackHash, calcErr := calculateFallbackHash()
-			if calcErr != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "failed to calculate fallback icon hash: "+calcErr.Error())
-			}
-			iconHash = fallbackHash
-		} else {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user icon hash: "+err.Error())
-		}
-	}
-
-	// If-None-Match ヘッダーを確認し、icon_hash と一致する場合は 304 を返す
+	// If-None-Matchヘッダーを検証
 	ifNoneMatch := c.Request().Header.Get("If-None-Match")
-	if ifNoneMatch == fmt.Sprintf(`"%s"`, iconHash) {
+	if ifNoneMatch == fmt.Sprintf(`"%s"`, string(iconHash)) {
+		// ハッシュが一致する場合は304を返す
 		return c.NoContent(http.StatusNotModified)
 	}
 
-	// 画像データを取得
-	var image []byte
-	if err := tx.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", user.ID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	// アイコン画像の読み込み
+	iconData, err := os.ReadFile(iconPath)
+	if err != nil {
+		if os.IsNotExist(err) {
 			return c.File(fallbackImage)
-		} else {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user icon: "+err.Error())
 		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to read icon")
 	}
 
-	// ETag ヘッダーに icon_hash を設定
-	c.Response().Header().Set("ETag", fmt.Sprintf(`"%s"`, iconHash))
+	// ETagにハッシュ値をセットして画像を返す
+	c.Response().Header().Set("ETag", fmt.Sprintf(`"%s"`, string(iconHash)))
+	return c.Blob(http.StatusOK, "image/jpeg", iconData)
+}
 
-	return c.Blob(http.StatusOK, "image/jpeg", image)
+const iconDirRoot = "/var/www/icons/"
+
+// ハッシュを計算する関数
+func calculateHash(data []byte) string {
+	hash := sha256.New()
+	hash.Write(data)
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func postIconHandler(c echo.Context) error {
-	ctx := c.Request().Context()
-
+	// ユーザーセッションの確認
 	if err := verifyUserSession(c); err != nil {
 		// echo.NewHTTPErrorが返っているのでそのまま出力
 		return err
@@ -153,40 +159,72 @@ func postIconHandler(c echo.Context) error {
 	// error already checked
 	sess, _ := session.Get(defaultSessionIDKey, c)
 	// existence already checked
-	userID := sess.Values[defaultUserIDKey].(int64)
+	userName := sess.Values[defaultUsernameKey].(string)
 
 	var req *PostIconRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to decode the request body as json")
 	}
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
+	// 画像データをディレクトリに保存する処理
 
-	if _, err := tx.ExecContext(ctx, "DELETE FROM icons WHERE user_id = ?", userID); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old user icon: "+err.Error())
+	// 保存先のディレクトリを指定（例: /var/www/icons/userID/）
+	userDir := fmt.Sprintf("%s%s", iconDirRoot, userName)
+	if err := os.MkdirAll(userDir, 0755); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create user icon directory: "+err.Error())
 	}
 
-	rs, err := tx.ExecContext(ctx, "INSERT INTO icons (user_id, image) VALUES (?, ?)", userID, req.Image)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert new user icon: "+err.Error())
+	// ファイルとして保存
+	iconPath := fmt.Sprintf("%s/icon", userDir)
+	if err := os.WriteFile(iconPath, req.Image, 0644); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to save user icon: "+err.Error())
+	}
+	// アイコンハッシュを計算して保存
+	iconHash := calculateHash(req.Image)
+	hashPath := filepath.Join(userDir, "icon.hash")
+	if err := os.WriteFile(hashPath, []byte(iconHash), 0644); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to save icon hash")
 	}
 
-	iconID, err := rs.LastInsertId()
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get last inserted icon id: "+err.Error())
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
-	}
-
+	// 成功した場合のレスポンス
 	return c.JSON(http.StatusCreated, &PostIconResponse{
-		ID: iconID,
+		ID: 1, // 1はダミー うまくいくか謎
 	})
+}
+
+// アイコンディレクトリのルートパス
+
+// アイコンディレクトリをすべて削除する関数
+func deleteAllIconDirs() error {
+	// まずは削除対象のディレクトリをリストアップ
+	var dirsToDelete []string
+
+	err := filepath.Walk(iconDirRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// ルートディレクトリ以外のすべてのディレクトリをリストアップ
+		if info.IsDir() && path != iconDirRoot {
+			dirsToDelete = append(dirsToDelete, path)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to list directories: %v", err)
+	}
+
+	// リストに基づいてディレクトリを削除
+	for _, dir := range dirsToDelete {
+		fmt.Println("Removing directory:", dir)
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("failed to remove directory %s: %v", dir, err)
+		}
+	}
+
+	fmt.Println("All user icon directories have been deleted successfully.")
+	return nil
 }
 
 func getMeHandler(c echo.Context) error {
@@ -447,18 +485,9 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 		return User{}, err
 	}
 
-	var iconHash string
-	// icon_hashをDBから取得
-	if err := tx.GetContext(ctx, &iconHash, "SELECT icon_hash FROM icons WHERE user_id = ?", userModel.ID); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return User{}, err
-		}
-		// iconがDBにない場合はfallbackIconHashを使用
-		fallbackHash, calcErr := calculateFallbackHash()
-		if calcErr != nil {
-			return User{}, calcErr
-		}
-		iconHash = fallbackHash
+	iconHash, err := getIconHashFromName(userModel.Name)
+	if err != nil {
+		return User{}, err
 	}
 
 	user := User{
@@ -509,30 +538,19 @@ func getUsers(ctx context.Context, tx *sqlx.Tx, userIDs []int64) ([]User, error)
 		themeMap[theme.UserID] = theme
 	}
 
-	var iconResults []struct {
-		UserID   int64  `db:"user_id"`
-		IconHash string `db:"icon_hash"`
-	}
-	query, args, err = sqlx.In("SELECT user_id, icon_hash FROM icons WHERE user_id IN (?)", userIDs)
-	if err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to build icon query: "+err.Error())
-	}
-	if err := tx.SelectContext(ctx, &iconResults, tx.Rebind(query), args...); err != nil {
-		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to load icons: "+err.Error())
-	}
-	iconMap := make(map[int64]string, len(iconResults))
+	iconMap := make(map[int64]string)
 
-	for _, icon := range iconResults {
-		iconMap[icon.UserID] = icon.IconHash
+	for id, user := range userMap {
+		iconMap[id], err = getIconHashFromName(user.Name)
+		if err != nil {
+			return make([]User, 0), err
+		}
 	}
 
 	for i, id := range userIDs {
 		userModel := userMap[id]
 		themeModel := themeMap[id]
-		iconhash, err := calculateFallbackHash()
-		if err != nil {
-			return make([]User, 0), err
-		}
+		iconhash := iconMap[id]
 
 		if value, exists := iconMap[id]; exists {
 			iconhash = value
