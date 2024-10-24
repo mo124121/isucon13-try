@@ -246,16 +246,7 @@ func getMeHandler(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	userModel := UserModel{}
-	err = tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE id = ?", userID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusNotFound, "not found user that has the userid in session")
-	}
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
-	}
-
-	user, err := fillUserResponse(ctx, tx, userModel)
+	user, err := getUser(ctx, tx, userID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill user: "+err.Error())
 	}
@@ -480,6 +471,36 @@ func calculateFallbackHash() (string, error) {
 }
 
 func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (User, error) {
+	themeModel := ThemeModel{}
+	if err := tx.GetContext(ctx, &themeModel, "SELECT * FROM themes WHERE user_id = ?", userModel.ID); err != nil {
+		return User{}, err
+	}
+
+	iconHash, err := getIconHashFromName(userModel.Name)
+	if err != nil {
+		return User{}, err
+	}
+
+	user := User{
+		ID:          userModel.ID,
+		Name:        userModel.Name,
+		DisplayName: userModel.DisplayName,
+		Description: userModel.Description,
+		Theme: Theme{
+			ID:       themeModel.ID,
+			DarkMode: themeModel.DarkMode,
+		},
+		IconHash: iconHash,
+	}
+
+	return user, nil
+}
+func getUser(ctx context.Context, tx *sqlx.Tx, userID int64) (User, error) {
+	userModel := UserModel{}
+	if err := tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE id = ?", userID); err != nil {
+		return User{}, err
+	}
+
 	themeModel := ThemeModel{}
 	if err := tx.GetContext(ctx, &themeModel, "SELECT * FROM themes WHERE user_id = ?", userModel.ID); err != nil {
 		return User{}, err
