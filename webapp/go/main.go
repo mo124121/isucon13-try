@@ -31,6 +31,7 @@ var (
 	powerDNSSubdomainAddress string
 	dbConn                   *sqlx.DB
 	secret                   = []byte("isucon13_session_cookiestore_defaultsecret")
+	userCache                = NewUserCache()
 )
 
 func init() {
@@ -115,6 +116,8 @@ func initializeHandler(c echo.Context) error {
 	if err := deleteAllIconDirs(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize: "+err.Error())
 	}
+
+	userCache = NewUserCache()
 
 	//測定スタート
 	go func() {

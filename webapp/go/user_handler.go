@@ -186,6 +186,26 @@ func postIconHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to save icon hash")
 	}
 
+	//更新されたのでUserCacheの削除
+	ctx := c.Request().Context()
+	if err := verifyUserSession(c); err != nil {
+		// echo.NewHTTPErrorが返っているのでそのまま出力
+		return err
+	}
+	tx, err := dbConn.BeginTxx(ctx, nil)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
+	}
+	defer tx.Rollback()
+	userModel := UserModel{}
+	if err := tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE name = ?", userName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusNotFound, "not found user that has the given username")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
+	}
+	userCache.Delete(userModel.ID)
+
 	// 成功した場合のレスポンス
 	return c.JSON(http.StatusCreated, &PostIconResponse{
 		ID: 1, // 1はダミー うまくいくか謎
@@ -495,7 +515,53 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 
 	return user, nil
 }
+
+type UserCache struct {
+	mu    sync.Mutex
+	items map[int64]User
+}
+
+func NewUserCache() *UserCache {
+	m := make(map[int64]User)
+	c := &UserCache{
+		items: m,
+	}
+	return c
+}
+
+func (c *UserCache) Set(userID int64, user User) {
+	c.mu.Lock()
+	c.items[userID] = user
+	c.mu.Unlock()
+}
+
+func (c *UserCache) Get(ctx context.Context, tx *sqlx.Tx, userID int64) (User, error) {
+	c.mu.Lock()
+	v, ok := c.items[userID]
+	c.mu.Unlock()
+	if ok {
+		return v, nil
+	}
+	v, err := getUserHeavy(ctx, tx, userID)
+	if err != nil {
+		return User{}, err
+	}
+	c.Set(userID, v)
+	return v, nil
+}
+
+func (c *UserCache) Delete(userID int64) {
+	c.mu.Lock()
+	delete(c.items, userID)
+	c.mu.Unlock()
+}
+
 func getUser(ctx context.Context, tx *sqlx.Tx, userID int64) (User, error) {
+	return userCache.Get(ctx, tx, userID)
+}
+
+func getUserHeavy(ctx context.Context, tx *sqlx.Tx, userID int64) (User, error) {
+
 	userModel := UserModel{}
 	if err := tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE id = ?", userID); err != nil {
 		return User{}, err
