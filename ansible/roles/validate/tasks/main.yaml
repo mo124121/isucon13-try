@@ -16,7 +16,7 @@
   set_fact:
     log_file: "/tmp/output_{{ log_timestamp }}.log"
 
-- name: Run bench and save output to a timestamped log file
+- name: Run validation and save output to a timestamped log file
   ansible.builtin.shell: |
     /home/isucon/bench run \
       --target https://pipe.u.isucon.local \
@@ -34,5 +34,5 @@
 - name: Fetch the log file to the local machine
   fetch:
     src: "{{ log_file }}"
-    dest: "./logs/"
+    dest: "../logs/"
     flat: true

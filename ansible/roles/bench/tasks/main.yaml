@@ -33,5 +33,5 @@
 - name: Fetch the log file to the local machine
   fetch:
     src: "{{ log_file }}"
-    dest: "./logs/"
+    dest: "../logs/"
     flat: true
