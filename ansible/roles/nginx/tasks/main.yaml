@@ -16,5 +16,6 @@
   ansible.builtin.copy:
     src: "../webapp/nginx/{{ item }}"
     dest: "/{{ item }}"
+  notify: restart_nginx
   with_items:
     - etc/nginx/sites-enabled/isupipe.conf
