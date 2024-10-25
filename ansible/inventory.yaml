@@ -1,8 +1,8 @@
 all:
   vars:
     hosts_ips:
-      S1: 54.249.3.81
-      S2: 35.72.5.243
+      S1: 54.199.66.128
+      S2: 18.182.12.217
 
   children:
     target:
@@ -17,7 +17,7 @@ all:
               ansible_host: "{{ hosts_ips.S1 }}"
         db_web:
           hosts:
-            db01:
+            db_web01:
               ansible_host: "{{ hosts_ips.S1 }}"
         pdns:
           hosts:
@@ -25,7 +25,7 @@ all:
               ansible_host: "{{ hosts_ips.S1 }}"
         db_pdns:
           hosts:
-            db01:
+            db_pdns01:
               ansible_host: "{{ hosts_ips.S2 }}"
     outsider:
       hosts:

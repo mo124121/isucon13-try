@@ -1,0 +1,42 @@
+- name: Ensure sql dir exists
+  become: true
+  ansible.builtin.file:
+    path: /home/isucon/webapp/pdns/initdb.d
+    state: directory
+    owner: isucon
+    group: isucon
+    mode: "0775"
+
+- name: Deploy pdns conf files
+  become: true
+  ansible.builtin.copy:
+    src: "../webapp/pdns/{{ item }}"
+    dest: "/{{ item }}"
+    owner: root
+    group: root
+  with_items:
+    - etc/powerdns/pdns.d/gmysql-host.conf
+    - etc/powerdns/pdns.d/local.conf
+  notify: restart_pdns
+
+- name: Deploy record files
+  become: true
+  ansible.builtin.copy:
+    src: "../{{ item }}"
+    dest: "/home/isucon/{{ item }}"
+    owner: isucon
+    group: isucon
+    mode: "0755"
+  with_items:
+    - webapp/pdns/u.isucon.local.zone
+    - webapp/pdns/init_zone.sh
+    - webapp/pdns/initdb.d/00_create_database.sql
+    - webapp/pdns/initdb.d/10_schema.sql
+
+- name: Disable pdns # use them just for pdnsutil
+  become: true
+  become_user: root
+  ansible.builtin.systemd:
+    name: pdns
+    state: stopped
+    enabled: false
