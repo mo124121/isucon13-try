@@ -23,6 +23,7 @@
       --nameserver {{ nameserver_ip }} \
       --webapp {{ webapp_ip }} \
       --enable-ssl \
+      --pretest-only \
       > {{ log_file }} 2>&1
   args:
     executable: /bin/bash

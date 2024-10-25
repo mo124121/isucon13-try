@@ -1,3 +1,10 @@
+- name: Deploy db_web
+  hosts: db_web
+  tasks:
+    - name: Import mysql_web role
+      ansible.builtin.import_role:
+        name: mysql_web
+
 - name: Build local
   hosts: localhost
   tasks:
@@ -5,6 +12,7 @@
       ansible.builtin.import_role:
         name: webapp
         tasks_from: build
+
 - name: Deploy remote
   hosts: webapp
   become_user: isucon

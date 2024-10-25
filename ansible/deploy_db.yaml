@@ -1,6 +1,0 @@
-- name: Deploy db
-  hosts: db
-  tasks:
-    - name: Import mysql role
-      ansible.builtin.import_role:
-        name: mysql

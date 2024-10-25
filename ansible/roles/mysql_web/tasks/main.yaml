@@ -1,0 +1,26 @@
+- name: Deploy config
+  become: true
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  notify: restart_mysql
+  with_items:
+    - etc/mysql/mysql.conf.d/mysqld.cnf
+
+
+- name: Create isucon user with full privileges
+  become: true
+  ansible.builtin.shell: |
+    mysql --execute="
+      CREATE USER IF NOT EXISTS 'isucon'@'{{ item }}' IDENTIFIED BY 'isucon';
+      GRANT ALL PRIVILEGES ON *.* TO 'isucon'@'{{ item }}' WITH GRANT OPTION;
+    "
+  args:
+    executable: /bin/bash
+  with_items:
+    - 'localhost'
+    - '54.249.3.81' # S1

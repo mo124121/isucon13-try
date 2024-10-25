@@ -7,6 +7,36 @@
     group: isucon
     mode: "0775"
 
+- name: Deploy pdns conf files
+  become: true
+  ansible.builtin.copy:
+    src: "../webapp/pdns/{{ item }}"
+    dest: "/{{ item }}"
+    owner: root
+    group: root
+  with_items:
+    - etc/powerdns/pdns.d/host.conf
+  notify: restart_pdns
+
+
+- name: Deploy record files
+  become: true
+  ansible.builtin.copy:
+    src: "../{{ item }}"
+    dest: "/home/isucon/{{ item }}"
+    owner: isucon
+    group: isucon
+    mode: "0755"
+  with_items:
+    - webapp/pdns/u.isucon.local.zone
+    - webapp/pdns/init_zone.sh
+    - webapp/pdns/initdb.d/00_create_database.sql
+    - webapp/pdns/initdb.d/10_schema.sql
+
+- name: Init zone
+  shell: |
+    /home/isucon/webapp/pdns/init_zone.sh
+
 - name: Install dnsdist
   become: true
   ansible.builtin.apt:
@@ -26,33 +56,3 @@
   with_items:
     - etc/dnsdist/dnsdist.conf
   notify: restart_dnsdist
-
-- name: Deploy pdns conf files
-  become: true
-  ansible.builtin.copy:
-    src: "../webapp/pdns/{{ item }}"
-    dest: "/{{ item }}"
-    owner: root
-    group: root
-  with_items:
-    - etc/powerdns/pdns.d/port.conf
-  notify: restart_pdns
-
-
-- name: Deploy record files
-  become: true
-  ansible.builtin.copy:
-    src: "../{{ item }}"
-    dest: "/home/isucon/{{ item }}"
-    owner: isucon
-    group: isucon
-  with_items:
-    - webapp/pdns/u.isucon.local.zone
-    - webapp/pdns/init_zone.sh
-    - webapp/pdns/initdb.d/00_create_database.sql
-    - webapp/pdns/initdb.d/10_schema.sql
-
-- name: Init DB
-  become: true
-  shell: |
-    /home/isucon/webapp/pdns/init_zone.sh
