@@ -3,6 +3,7 @@ all:
     hosts_ips:
       S1: 54.199.66.128
       S2: 18.182.12.217
+      B: 43.207.163.15
 
   children:
     target:
@@ -22,7 +23,7 @@ all:
         pdns:
           hosts:
             pdns01:
-              ansible_host: "{{ hosts_ips.S1 }}"
+              ansible_host: "{{ hosts_ips.S2 }}"
         db_pdns:
           hosts:
             db_pdns01:
@@ -30,4 +31,4 @@ all:
     outsider:
       hosts:
         benchmarker:
-          ansible_host: "{{ hosts_ips.S2 }}"
+          ansible_host: "{{ hosts_ips.B }}"

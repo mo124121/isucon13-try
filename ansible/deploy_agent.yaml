@@ -1,0 +1,6 @@
+- name: Deploy agent
+  hosts: target
+  tasks:
+    - name: Import  role
+      ansible.builtin.import_role:
+        name: agent

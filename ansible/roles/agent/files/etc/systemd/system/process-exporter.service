@@ -1,0 +1,11 @@
+[Unit]
+Description=Process Exporter for Prometheus
+After=network.target
+
+[Service]
+ExecStart=/opt/process-exporter/process-exporter-0.8.4.linux-amd64/process-exporter -config.path=/opt/process-exporter/process-exporter.yml
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
