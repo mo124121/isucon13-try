@@ -126,6 +126,7 @@ func initializeHandler(c echo.Context) error {
 	userCache = NewUserCache()
 	cacheLock.Lock()
 	userNameIconCache = sync.Map{}
+	livestreamModelCache = sync.Map{}
 	cacheLock.Unlock()
 
 	//測定スタート

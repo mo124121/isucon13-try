@@ -142,8 +142,8 @@ func fillReactionResponse(ctx context.Context, tx *sqlx.Tx, reactionModel Reacti
 		return Reaction{}, err
 	}
 
-	livestreamModel := LivestreamModel{}
-	if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", reactionModel.LivestreamID); err != nil {
+	var livestreamModel LivestreamModel
+	if livestreamModel, err = getLivestreamModel(ctx, tx, int(reactionModel.LivestreamID)); err != nil {
 		return Reaction{}, err
 	}
 	livestream, err := fillLivestreamResponse(ctx, tx, livestreamModel)
@@ -181,6 +181,7 @@ func preploadReactionResponse(ctx context.Context, tx *sqlx.Tx, reactionModels [
 	for id := range livestreamIDset {
 		livestreamID = id
 	}
+
 	livestreamModel := LivestreamModel{}
 	if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", livestreamID); err != nil {
 		return make([]Reaction, 0), err

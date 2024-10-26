@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -68,6 +69,28 @@ type ReservationSlotModel struct {
 	EndAt   int64 `db:"end_at" json:"end_at"`
 }
 
+var (
+	livestreamModelCache = sync.Map{}
+)
+
+func getLivestreamModel(ctx context.Context, tx *sqlx.Tx, livestreamID int) (LivestreamModel, error) {
+	if livestreamModel, ok := livestreamModelCache.Load(livestreamID); ok {
+		return livestreamModel.(LivestreamModel), nil
+	}
+
+	var livestreamModel LivestreamModel
+	if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", livestreamID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return LivestreamModel{}, err
+		} else {
+			return LivestreamModel{}, err
+		}
+	}
+	livestreamModelCache.Store(livestreamID, livestreamModel)
+
+	return livestreamModel, nil
+
+}
 func reserveLivestreamHandler(c echo.Context) error {
 	ctx := c.Request().Context()
 	defer c.Request().Body.Close()
@@ -414,8 +437,7 @@ func getLivestreamHandler(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	livestreamModel := LivestreamModel{}
-	err = tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", livestreamID)
+	livestreamModel, err := getLivestreamModel(ctx, tx, livestreamID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return echo.NewHTTPError(http.StatusNotFound, "not found livestream that has the given id")
 	}
@@ -454,10 +476,9 @@ func getLivecommentReportsHandler(c echo.Context) error {
 	defer tx.Rollback()
 
 	var livestreamModel LivestreamModel
-	if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", livestreamID); err != nil {
+	if livestreamModel, err = getLivestreamModel(ctx, tx, livestreamID); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream: "+err.Error())
 	}
-
 	// error already check
 	sess, _ := session.Get(defaultSessionIDKey, c)
 	// existence already check
