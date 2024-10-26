@@ -1,14 +1,35 @@
 all:
+  vars:
+    hosts_ips:
+      S1: ISUCON_TRY_SERVER1_IP
+      S2: ISUCON_TRY_SERVER2_IP
+      S3: ISUCON_TRY_SERVER3_IP
+      B: ISUCON_TRY_BENCHMARKER_IP
+
   children:
-    nginx:
+    target:
+      children:
+        nginx:
+          hosts:
+            nginx01:
+              ansible_host: "{{ hosts_ips.S1 }}"
+        webapp:
+          hosts:
+            webapp01:
+              ansible_host: "{{ hosts_ips.S1 }}"
+        db_web:
+          hosts:
+            db_web01:
+              ansible_host: "{{ hosts_ips.S3 }}"
+        pdns:
+          hosts:
+            pdns01:
+              ansible_host: "{{ hosts_ips.S2 }}"
+        db_pdns:
+          hosts:
+            db_pdns01:
+              ansible_host: "{{ hosts_ips.S2 }}"
+    outsider:
       hosts:
-        nginx01:
-          ansible_host: 18.179.41.134
-    webapp:
-      hosts:
-        webapp01:
-          ansible_host: 18.179.41.134
-    db:
-      hosts:
-        db01:
-          ansible_host: 18.179.41.134
+        benchmarker:
+          ansible_host: "{{ hosts_ips.B }}"

@@ -1,0 +1,6 @@
+- name: Run bench
+  hosts: benchmarker
+  tasks:
+    - name: Import bench role
+      ansible.builtin.import_role:
+        name: bench

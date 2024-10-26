@@ -93,33 +93,40 @@ func getUserStatisticsHandler(c echo.Context) error {
 	}
 
 	var ranking UserRanking
-	for _, user := range users {
-		var reactions int64
-		query := `
-		SELECT COUNT(*) FROM users u
-		INNER JOIN livestreams l ON l.user_id = u.id
-		INNER JOIN reactions r ON r.livestream_id = l.id
-		WHERE u.id = ?`
-		if err := tx.GetContext(ctx, &reactions, query, user.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count reactions: "+err.Error())
-		}
 
-		var tips int64
-		query = `
-		SELECT IFNULL(SUM(l2.tip), 0) FROM users u
-		INNER JOIN livestreams l ON l.user_id = u.id	
-		INNER JOIN livecomments l2 ON l2.livestream_id = l.id
-		WHERE u.id = ?`
-		if err := tx.GetContext(ctx, &tips, query, user.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count tips: "+err.Error())
-		}
+	rankingQuery := `
+	SELECT
+		u.id,
+		u.name,
+		COUNT(DISTINCT r.id) AS reaction_count,
+		IFNULL(SUM(lc.tip), 0) AS tip_sum
+	FROM users u
+	LEFT JOIN livestreams l ON l.user_id = u.id
+	LEFT JOIN reactions r ON r.livestream_id = l.id
+	LEFT JOIN livecomments lc ON lc.livestream_id = l.id
+	GROUP BY u.id, u.name;
+	`
 
-		score := reactions + tips
+	var results []struct {
+		ID            int64  `db:"id"`
+		Name          string `db:"name"`
+		ReactionCount int64  `db:"reaction_count"`
+		TipSum        int64  `db:"tip_sum"`
+	}
+
+	if err := tx.SelectContext(ctx, &results, rankingQuery); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get ranking: "+err.Error())
+	}
+
+	// スコア計算とランキング作成
+	for _, result := range results {
+		score := result.ReactionCount + result.TipSum
 		ranking = append(ranking, UserRankingEntry{
-			Username: user.Name,
+			Username: result.Name,
 			Score:    score,
 		})
 	}
+
 	sort.Sort(ranking)
 
 	var rank int64 = 1
@@ -227,30 +234,43 @@ func getLivestreamStatisticsHandler(c echo.Context) error {
 		}
 	}
 
-	var livestreams []*LivestreamModel
-	if err := tx.SelectContext(ctx, &livestreams, "SELECT * FROM livestreams"); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestreams: "+err.Error())
+	// ランク算出
+	// リアクション数とチップ合計をまとめて取得するクエリ
+	query := `
+		SELECT
+			l.id AS livestream_id,
+			l.title, -- 他に必要なカラムがあればここに追加
+			COUNT(DISTINCT r.id) AS reaction_count,
+			IFNULL(SUM(lc.tip), 0) AS tip_sum
+		FROM livestreams l
+		LEFT JOIN reactions r ON l.id = r.livestream_id
+		LEFT JOIN livecomments lc ON lc.livestream_id = l.id
+		GROUP BY l.id;
+		`
+
+	// クエリ結果の格納用
+	var results []struct {
+		LivestreamID  int64  `db:"livestream_id"`
+		Title         string `db:"title"` // 必要なカラムを追加
+		ReactionCount int64  `db:"reaction_count"`
+		TipSum        int64  `db:"tip_sum"`
 	}
 
-	// ランク算出
+	if err := tx.SelectContext(ctx, &results, query); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get livestream ranking: "+err.Error())
+	}
+
+	// ランキングを構築
 	var ranking LivestreamRanking
-	for _, livestream := range livestreams {
-		var reactions int64
-		if err := tx.GetContext(ctx, &reactions, "SELECT COUNT(*) FROM livestreams l INNER JOIN reactions r ON l.id = r.livestream_id WHERE l.id = ?", livestream.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count reactions: "+err.Error())
-		}
-
-		var totalTips int64
-		if err := tx.GetContext(ctx, &totalTips, "SELECT IFNULL(SUM(l2.tip), 0) FROM livestreams l INNER JOIN livecomments l2 ON l.id = l2.livestream_id WHERE l.id = ?", livestream.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to count tips: "+err.Error())
-		}
-
-		score := reactions + totalTips
+	for _, result := range results {
+		score := result.ReactionCount + result.TipSum
 		ranking = append(ranking, LivestreamRankingEntry{
-			LivestreamID: livestream.ID,
+			LivestreamID: result.LivestreamID,
 			Score:        score,
 		})
 	}
+
+	// ランキングをソート
 	sort.Sort(ranking)
 
 	var rank int64 = 1

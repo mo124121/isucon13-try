@@ -1,0 +1,7 @@
+- name: Run validate
+  hosts: benchmarker
+  gather_facts: false
+  tasks:
+    - name: Import validate role
+      ansible.builtin.import_role:
+        name: validate

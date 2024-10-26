@@ -1,0 +1,6 @@
+- name: Deploy files
+  become: true
+  ansible.builtin.copy:
+    src: ../webapp/env.sh
+    dest: /home/isucon/env.sh
+

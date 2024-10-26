@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -85,40 +88,79 @@ type PostIconResponse struct {
 	ID int64 `json:"id"`
 }
 
-func getIconHandler(c echo.Context) error {
-	ctx := c.Request().Context()
+var (
+	userNameIconCache = sync.Map{}
+)
 
+func getIconHashFromName(username string) (string, error) {
+	if hash, ok := userNameIconCache.Load(username); ok {
+		return hash.(string), nil
+	}
+
+	userDir := fmt.Sprintf("/var/www/icons/%s", username)
+	hashPath := filepath.Join(userDir, "icon.hash")
+	// ハッシュファイルの読み込み
+	iconHashByte, err := os.ReadFile(hashPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			iconHash, calcErr := calculateFallbackHash()
+			if calcErr != nil {
+				return "", calcErr
+			}
+			return iconHash, nil
+		}
+	}
+	iconHash := string(iconHashByte)
+
+	userNameIconCache.Store(username, iconHash)
+	return iconHash, nil
+}
+
+func getIconHandler(c echo.Context) error {
 	username := c.Param("username")
 
-	tx, err := dbConn.BeginTxx(ctx, nil)
+	// アイコンファイルとハッシュファイルのパス
+	userDir := fmt.Sprintf("/var/www/icons/%s", username)
+	iconPath := filepath.Join(userDir, "icon")
+
+	// ハッシュ取得
+	iconHash, err := getIconHashFromName(username)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
-	}
-	defer tx.Rollback()
-
-	var user UserModel
-	if err := tx.GetContext(ctx, &user, "SELECT * FROM users WHERE name = ?", username); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "not found user that has the given username")
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get icon hash")
 	}
 
-	var image []byte
-	if err := tx.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", user.ID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	// If-None-Matchヘッダーを検証
+	ifNoneMatch := c.Request().Header.Get("If-None-Match")
+	if ifNoneMatch == fmt.Sprintf(`"%s"`, string(iconHash)) {
+		// ハッシュが一致する場合は304を返す
+		return c.NoContent(http.StatusNotModified)
+	}
+
+	// アイコン画像の読み込み
+	iconData, err := os.ReadFile(iconPath)
+	if err != nil {
+		if os.IsNotExist(err) {
 			return c.File(fallbackImage)
-		} else {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user icon: "+err.Error())
 		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to read icon")
 	}
 
-	return c.Blob(http.StatusOK, "image/jpeg", image)
+	// ETagにハッシュ値をセットして画像を返す
+	c.Response().Header().Set("ETag", fmt.Sprintf(`"%s"`, string(iconHash)))
+	return c.Blob(http.StatusOK, "image/jpeg", iconData)
+}
+
+const iconDirRoot = "/var/www/icons/"
+
+// ハッシュを計算する関数
+func calculateHash(data []byte) string {
+	hash := sha256.New()
+	hash.Write(data)
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func postIconHandler(c echo.Context) error {
-	ctx := c.Request().Context()
-
+	// ユーザーセッションの確認
 	if err := verifyUserSession(c); err != nil {
 		// echo.NewHTTPErrorが返っているのでそのまま出力
 		return err
@@ -127,40 +169,92 @@ func postIconHandler(c echo.Context) error {
 	// error already checked
 	sess, _ := session.Get(defaultSessionIDKey, c)
 	// existence already checked
-	userID := sess.Values[defaultUserIDKey].(int64)
+	userName := sess.Values[defaultUsernameKey].(string)
 
 	var req *PostIconRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "failed to decode the request body as json")
 	}
 
+	// 画像データをディレクトリに保存する処理
+
+	// 保存先のディレクトリを指定（例: /var/www/icons/userID/）
+	userDir := fmt.Sprintf("%s%s", iconDirRoot, userName)
+	if err := os.MkdirAll(userDir, 0755); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create user icon directory: "+err.Error())
+	}
+
+	// ファイルとして保存
+	iconPath := fmt.Sprintf("%s/icon", userDir)
+	if err := os.WriteFile(iconPath, req.Image, 0644); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to save user icon: "+err.Error())
+	}
+	// アイコンハッシュを計算して保存
+	iconHash := calculateHash(req.Image)
+	hashPath := filepath.Join(userDir, "icon.hash")
+	if err := os.WriteFile(hashPath, []byte(iconHash), 0644); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to save icon hash")
+	}
+
+	//更新されたのでUserCacheの削除
+	ctx := c.Request().Context()
+	if err := verifyUserSession(c); err != nil {
+		// echo.NewHTTPErrorが返っているのでそのまま出力
+		return err
+	}
 	tx, err := dbConn.BeginTxx(ctx, nil)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction: "+err.Error())
 	}
 	defer tx.Rollback()
-
-	if _, err := tx.ExecContext(ctx, "DELETE FROM icons WHERE user_id = ?", userID); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete old user icon: "+err.Error())
+	userModel := UserModel{}
+	if err := tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE name = ?", userName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusNotFound, "not found user that has the given username")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
 	}
+	userCache.Delete(userModel.ID)
 
-	rs, err := tx.ExecContext(ctx, "INSERT INTO icons (user_id, image) VALUES (?, ?)", userID, req.Image)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert new user icon: "+err.Error())
-	}
-
-	iconID, err := rs.LastInsertId()
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get last inserted icon id: "+err.Error())
-	}
-
-	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit: "+err.Error())
-	}
-
+	// 成功した場合のレスポンス
 	return c.JSON(http.StatusCreated, &PostIconResponse{
-		ID: iconID,
+		ID: 1, // 1はダミー うまくいくか謎
 	})
+}
+
+// アイコンディレクトリのルートパス
+
+// アイコンディレクトリをすべて削除する関数
+func deleteAllIconDirs() error {
+	// まずは削除対象のディレクトリをリストアップ
+	var dirsToDelete []string
+
+	err := filepath.Walk(iconDirRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// ルートディレクトリ以外のすべてのディレクトリをリストアップ
+		if info.IsDir() && path != iconDirRoot {
+			dirsToDelete = append(dirsToDelete, path)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to list directories: %v", err)
+	}
+
+	// リストに基づいてディレクトリを削除
+	for _, dir := range dirsToDelete {
+		fmt.Println("Removing directory:", dir)
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("failed to remove directory %s: %v", dir, err)
+		}
+	}
+
+	fmt.Println("All user icon directories have been deleted successfully.")
+	return nil
 }
 
 func getMeHandler(c echo.Context) error {
@@ -182,16 +276,7 @@ func getMeHandler(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	userModel := UserModel{}
-	err = tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE id = ?", userID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusNotFound, "not found user that has the userid in session")
-	}
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user: "+err.Error())
-	}
-
-	user, err := fillUserResponse(ctx, tx, userModel)
+	user, err := getUser(ctx, tx, userID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill user: "+err.Error())
 	}
@@ -256,7 +341,7 @@ func registerHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert user theme: "+err.Error())
 	}
 
-	if out, err := exec.Command("pdnsutil", "add-record", "u.isucon.local", req.Name, "A", "0", powerDNSSubdomainAddress).CombinedOutput(); err != nil {
+	if out, err := exec.Command("pdnsutil", "add-record", "u.isucon.local", req.Name, "A", "90", powerDNSSubdomainAddress).CombinedOutput(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, string(out)+": "+err.Error())
 	}
 
@@ -398,23 +483,33 @@ func verifyUserSession(c echo.Context) error {
 	return nil
 }
 
+var fallbackIconHash string
+var once sync.Once
+
+func calculateFallbackHash() (string, error) {
+	var err error
+	once.Do(func() {
+		image, readErr := os.ReadFile(fallbackImage)
+		if readErr != nil {
+			err = readErr
+			return
+		}
+		hash := sha256.Sum256(image)
+		fallbackIconHash = fmt.Sprintf("%x", hash)
+	})
+	return fallbackIconHash, err
+}
+
 func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (User, error) {
 	themeModel := ThemeModel{}
 	if err := tx.GetContext(ctx, &themeModel, "SELECT * FROM themes WHERE user_id = ?", userModel.ID); err != nil {
 		return User{}, err
 	}
 
-	var image []byte
-	if err := tx.GetContext(ctx, &image, "SELECT image FROM icons WHERE user_id = ?", userModel.ID); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return User{}, err
-		}
-		image, err = os.ReadFile(fallbackImage)
-		if err != nil {
-			return User{}, err
-		}
+	iconHash, err := getIconHashFromName(userModel.Name)
+	if err != nil {
+		return User{}, err
 	}
-	iconHash := sha256.Sum256(image)
 
 	user := User{
 		ID:          userModel.ID,
@@ -425,8 +520,156 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 			ID:       themeModel.ID,
 			DarkMode: themeModel.DarkMode,
 		},
-		IconHash: fmt.Sprintf("%x", iconHash),
+		IconHash: iconHash,
 	}
 
 	return user, nil
+}
+
+var (
+	userCache = NewUserCache()
+)
+
+type UserCache struct {
+	mu    sync.Mutex
+	items map[int64]User
+}
+
+func NewUserCache() *UserCache {
+	m := make(map[int64]User)
+	c := &UserCache{
+		items: m,
+	}
+	return c
+}
+
+func (c *UserCache) Set(userID int64, user User) {
+	c.mu.Lock()
+	c.items[userID] = user
+	c.mu.Unlock()
+}
+
+func (c *UserCache) Get(ctx context.Context, tx *sqlx.Tx, userID int64) (User, error) {
+	c.mu.Lock()
+	v, ok := c.items[userID]
+	c.mu.Unlock()
+	if ok {
+		return v, nil
+	}
+	v, err := getUserHeavy(ctx, tx, userID)
+	if err != nil {
+		return User{}, err
+	}
+	c.Set(userID, v)
+	return v, nil
+}
+
+func (c *UserCache) Delete(userID int64) {
+	c.mu.Lock()
+	delete(c.items, userID)
+	c.mu.Unlock()
+}
+
+func getUser(ctx context.Context, tx *sqlx.Tx, userID int64) (User, error) {
+	return userCache.Get(ctx, tx, userID)
+}
+
+func getUserHeavy(ctx context.Context, tx *sqlx.Tx, userID int64) (User, error) {
+
+	userModel := UserModel{}
+	if err := tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE id = ?", userID); err != nil {
+		return User{}, err
+	}
+
+	themeModel := ThemeModel{}
+	if err := tx.GetContext(ctx, &themeModel, "SELECT * FROM themes WHERE user_id = ?", userModel.ID); err != nil {
+		return User{}, err
+	}
+
+	iconHash, err := getIconHashFromName(userModel.Name)
+	if err != nil {
+		return User{}, err
+	}
+
+	user := User{
+		ID:          userModel.ID,
+		Name:        userModel.Name,
+		DisplayName: userModel.DisplayName,
+		Description: userModel.Description,
+		Theme: Theme{
+			ID:       themeModel.ID,
+			DarkMode: themeModel.DarkMode,
+		},
+		IconHash: iconHash,
+	}
+
+	return user, nil
+}
+
+func getUsers(ctx context.Context, tx *sqlx.Tx, userIDs []int64) ([]User, error) {
+	users := make([]User, len(userIDs))
+	if len(userIDs) == 0 {
+		return users, nil
+	}
+	var userModels []UserModel
+	query, args, err := sqlx.In("SELECT * FROM users WHERE id IN (?)", userIDs)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.SelectContext(ctx, &userModels, tx.Rebind(query), args...); err != nil {
+		return nil, err
+	}
+	// UserID -> UserModelのマッピングを作成
+	userMap := make(map[int64]UserModel, len(userModels))
+	for _, owner := range userModels {
+		userMap[owner.ID] = owner
+	}
+
+	// ユーザーのテーマとアイコンをプリロード
+	var themeModels []ThemeModel
+	query, args, err = sqlx.In("SELECT * FROM themes WHERE user_id IN (?)", userIDs)
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to build theme query: "+err.Error())
+	}
+	if err := tx.SelectContext(ctx, &themeModels, tx.Rebind(query), args...); err != nil {
+		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to load themes: "+err.Error())
+	}
+	themeMap := make(map[int64]ThemeModel, len(themeModels))
+	for _, theme := range themeModels {
+		themeMap[theme.UserID] = theme
+	}
+
+	iconMap := make(map[int64]string)
+
+	for id, user := range userMap {
+		iconMap[id], err = getIconHashFromName(user.Name)
+		if err != nil {
+			return make([]User, 0), err
+		}
+	}
+
+	for i, id := range userIDs {
+		userModel := userMap[id]
+		themeModel := themeMap[id]
+		iconhash := iconMap[id]
+
+		if value, exists := iconMap[id]; exists {
+			iconhash = value
+		}
+
+		users[i] = User{
+			ID:          userModel.ID,
+			Name:        userModel.Name,
+			DisplayName: userModel.DisplayName,
+			Description: userModel.Description,
+			Theme: Theme{
+				ID:       themeModel.ID,
+				DarkMode: themeModel.DarkMode,
+			},
+			IconHash: iconhash,
+		}
+	}
+
+	return users, nil
+
 }

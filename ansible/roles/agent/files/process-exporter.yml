@@ -1,0 +1,19 @@
+process_names:
+  - name: nginx
+    exe:
+      - nginx
+  - name: mysql
+    exe:
+      - mysqld
+  - name: isupipe
+    exe:
+      - isupipe
+  - name: dnsdist
+    exe:
+      - dnsdist
+  - name: powerdns
+    exe:
+      - pdns_server
+  - name: journal
+    exe:
+      - systemd-journal

@@ -1,0 +1,88 @@
+- name: Ensure pprotein dir exists
+  become: true
+  ansible.builtin.file:
+    path: /opt/pprotein
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+
+- name: Download pprotein
+  become: true
+  ansible.builtin.unarchive:
+    src: https://github.com/kaz/pprotein/releases/download/v1.2.3/pprotein_1.2.3_linux_amd64.tar.gz
+    dest: /opt/pprotein
+    remote_src: true
+
+
+- name: Ensure node exporter dir exists
+  become: true
+  ansible.builtin.file:
+    path: /opt/node_exporter
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download node exporter
+  become: true
+  ansible.builtin.unarchive:
+    src: https://github.com/prometheus/node_exporter/releases/download/v1.8.2/node_exporter-1.8.2.linux-amd64.tar.gz
+    dest: /opt/node_exporter
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure process exporter dir exists
+  become: true
+  ansible.builtin.file:
+    path: /opt/process-exporter
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Process Exporter
+  become: true
+  ansible.builtin.unarchive:
+    src: https://github.com/ncabatoff/process-exporter/releases/download/v0.8.4/process-exporter-0.8.4.linux-amd64.tar.gz
+    dest: /opt/process-exporter
+    remote_src: true
+
+- name: Create process exporter config file
+  become: true
+  ansible.builtin.copy:
+    src: process-exporter.yml
+    dest: /opt/process-exporter/
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+
+- name: Create service unit files
+  become: true
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  with_items:
+    - etc/systemd/system/pprotein-agent.service
+    - etc/systemd/system/node_exporter.service
+    - etc/systemd/system/process-exporter.service
+
+- name: Start service
+  become: true
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: restarted
+    enabled: true
+    daemon_reload: true
+  with_items:
+    - pprotein-agent.service
+    - node_exporter.service
+    - process-exporter.service

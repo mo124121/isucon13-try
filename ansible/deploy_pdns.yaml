@@ -1,0 +1,13 @@
+- name: Deploy db_pdns
+  hosts: db_pdns
+  tasks:
+    - name: Import mysql_pdns role
+      ansible.builtin.import_role:
+        name: mysql_pdns
+
+- name: Deploy pdns
+  hosts: pdns
+  tasks:
+    - name: Import pdns role
+      ansible.builtin.import_role:
+        name: pdns

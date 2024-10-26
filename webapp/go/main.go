@@ -11,14 +11,15 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"sync"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
 	"github.com/kaz/pprotein/integration/echov4"
+	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/gorilla/sessions"
-	"github.com/labstack/echo-contrib/session"
 	echolog "github.com/labstack/gommon/log"
 )
 
@@ -31,6 +32,7 @@ var (
 	powerDNSSubdomainAddress string
 	dbConn                   *sqlx.DB
 	secret                   = []byte("isucon13_session_cookiestore_defaultsecret")
+	cacheLock                = sync.Mutex{}
 )
 
 func init() {
@@ -60,7 +62,7 @@ func connectDB(logger echo.Logger) (*sqlx.DB, error) {
 	// 環境変数がセットされていなかった場合でも一旦動かせるように、デフォルト値を入れておく
 	// この挙動を変更して、エラーを出すようにしてもいいかもしれない
 	conf.Net = "tcp"
-	conf.Addr = net.JoinHostPort("127.0.0.1", "3306")
+	conf.Addr = net.JoinHostPort("ISUCON_TRY_SERVER3_IP", "3306")
 	conf.User = "isucon"
 	conf.Passwd = "isucon"
 	conf.DBName = "isupipe"
@@ -112,12 +114,28 @@ func initializeHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize: "+err.Error())
 	}
 
-	//測定スタート
-	go func() {
-		if _, err := http.Get("https://stunning-giggle-579wr45v9p9hxx4-9000.app.github.dev/api/group/collect"); err != nil {
-			log.Printf("failed to communicate with pprotein: %v", err)
-		}
-	}()
+	if out, err := exec.Command("../pdns/init_zone.sh").CombinedOutput(); err != nil {
+		c.Logger().Warnf("init_zone.sh failed with err=%s", string(out))
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize: "+err.Error())
+	}
+
+	if err := deleteAllIconDirs(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize: "+err.Error())
+	}
+
+	userCache = NewUserCache()
+	cacheLock.Lock()
+	userNameIconCache = sync.Map{}
+	livestreamModelCache = sync.Map{}
+	tagCache = sync.Map{}
+	cacheLock.Unlock()
+
+	// //測定スタート
+	// go func() {
+	// 	if _, err := http.Get("https://stunning-giggle-579wr45v9p9hxx4-9000.app.github.dev/api/group/collect"); err != nil {
+	// 		log.Printf("failed to communicate with pprotein: %v", err)
+	// 	}
+	// }()
 
 	c.Request().Header.Add("Content-Type", "application/json;charset=utf-8")
 	return c.JSON(http.StatusOK, InitializeResponse{

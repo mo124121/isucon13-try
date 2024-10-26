@@ -4,6 +4,7 @@
     src: ../webapp/go/isupipe
     dest: /home/isucon/webapp/go/
   notify: restart_webapp
+
 - name: Deploy init files
   become: true
   ansible.builtin.copy:
@@ -12,6 +13,7 @@
   with_items:
     - ../webapp/sql/init.sh
     - ../webapp/sql/init.sql
+
 - name: Deploy sql files
   become: true
   ansible.builtin.copy:
@@ -20,3 +22,33 @@
   with_items:
     - ../webapp/sql/initdb.d/00_create_database.sql
     - ../webapp/sql/initdb.d/10_schema.sql
+
+- name: Create icon dir
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: /var/www/icons
+    state: directory
+    owner: isucon
+    group: isucon
+    mode: "0775"
+
+- name: Create default icon dir
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    path: /var/www/default
+    state: directory
+    owner: isucon
+    group: isucon
+    mode: "0775"
+
+- name: Allocate default icon
+  become: true
+  become_user: root
+  ansible.builtin.copy:
+    src: ../webapp/img/NoImage.jpg
+    dest: /var/www/default/NoImage.jpg
+    owner: isucon
+    group: isucon
+    mode: "0755"

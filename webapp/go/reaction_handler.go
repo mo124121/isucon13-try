@@ -66,14 +66,9 @@ func getReactionsHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "failed to get reactions")
 	}
 
-	reactions := make([]Reaction, len(reactionModels))
-	for i := range reactionModels {
-		reaction, err := fillReactionResponse(ctx, tx, reactionModels[i])
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to fill reaction: "+err.Error())
-		}
-
-		reactions[i] = reaction
+	reactions, err := preploadReactionResponse(ctx, tx, reactionModels)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "failed to fill reactions")
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -142,17 +137,13 @@ func postReactionHandler(c echo.Context) error {
 }
 
 func fillReactionResponse(ctx context.Context, tx *sqlx.Tx, reactionModel ReactionModel) (Reaction, error) {
-	userModel := UserModel{}
-	if err := tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE id = ?", reactionModel.UserID); err != nil {
-		return Reaction{}, err
-	}
-	user, err := fillUserResponse(ctx, tx, userModel)
+	user, err := getUser(ctx, tx, reactionModel.UserID)
 	if err != nil {
 		return Reaction{}, err
 	}
 
-	livestreamModel := LivestreamModel{}
-	if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", reactionModel.LivestreamID); err != nil {
+	var livestreamModel LivestreamModel
+	if livestreamModel, err = getLivestreamModel(ctx, tx, int(reactionModel.LivestreamID)); err != nil {
 		return Reaction{}, err
 	}
 	livestream, err := fillLivestreamResponse(ctx, tx, livestreamModel)
@@ -169,4 +160,57 @@ func fillReactionResponse(ctx context.Context, tx *sqlx.Tx, reactionModel Reacti
 	}
 
 	return reaction, nil
+}
+
+func preploadReactionResponse(ctx context.Context, tx *sqlx.Tx, reactionModels []ReactionModel) ([]Reaction, error) {
+	reactions := make([]Reaction, len(reactionModels))
+	if len(reactionModels) == 0 {
+		return reactions, nil
+	}
+
+	// VALIDATE 全てのreactionが同じlivestreamIDsを持つことを確認
+	livestreamIDset := make(map[int64]struct{})
+	for _, reactionmodel := range reactionModels {
+		livestreamIDset[reactionmodel.LivestreamID] = struct{}{}
+	}
+	if len(livestreamIDset) > 1 {
+		panic("INVALID INPUT")
+	}
+
+	var livestreamID int64 = 0
+	for id := range livestreamIDset {
+		livestreamID = id
+	}
+
+	livestreamModel := LivestreamModel{}
+	if err := tx.GetContext(ctx, &livestreamModel, "SELECT * FROM livestreams WHERE id = ?", livestreamID); err != nil {
+		return make([]Reaction, 0), err
+	}
+	livestream, err := fillLivestreamResponse(ctx, tx, livestreamModel)
+	if err != nil {
+		return make([]Reaction, 0), err
+	}
+
+	// user IDsを抽出
+	userIDs := make([]int64, len(reactionModels))
+	for i, reaction := range reactionModels {
+		userIDs[i] = reaction.UserID
+	}
+
+	// userの一括取得
+	users, err := getUsers(ctx, tx, userIDs)
+	if err != nil {
+		return make([]Reaction, 0), err
+	}
+
+	for i, reactionModel := range reactionModels {
+		reactions[i] = Reaction{
+			ID:         reactionModel.ID,
+			EmojiName:  reactionModel.EmojiName,
+			User:       users[i],
+			Livestream: livestream,
+			CreatedAt:  reactionModel.CreatedAt,
+		}
+	}
+	return reactions, nil
 }

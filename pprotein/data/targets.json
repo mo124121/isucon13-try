@@ -2,19 +2,25 @@
   {
     "Type": "pprof",
     "Label": "webapp",
-    "URL": "http://18.179.41.134:8080/debug/pprof/profile",
-    "Duration": 60
+    "URL": "http://ISUCON_TRY_SERVER1_IP:8080/debug/pprof/profile",
+    "Duration": 90
   },
   {
     "Type": "httplog",
     "Label": "nginx",
-    "URL": "http://18.179.41.134:19000/debug/log/httplog",
-    "Duration": 60
+    "URL": "http://ISUCON_TRY_SERVER1_IP:19000/debug/log/httplog",
+    "Duration": 90
   },
   {
     "Type": "slowlog",
     "Label": "mysql",
-    "URL": "http://18.179.41.134:19000/debug/log/slowlog",
-    "Duration": 60
+    "URL": "http://ISUCON_TRY_SERVER1_IP:19000/debug/log/slowlog",
+    "Duration": 90
+  },
+  {
+    "Type": "slowlog",
+    "Label": "mysql2",
+    "URL": "http://ISUCON_TRY_SERVER2_IP:19000/debug/log/slowlog",
+    "Duration": 90
   }
 ]

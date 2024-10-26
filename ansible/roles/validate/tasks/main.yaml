@@ -1,0 +1,38 @@
+- name: Add webapp IP and hostname to /etc/hosts
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    state: present
+    line: "{{ webapp_ip }} pipe.u.isucon.local"
+    regexp: "^{{ webapp_ip }}\\s+pipe.u.isucon.local"
+  vars:
+    webapp_ip: "ISUCON_TRY_SERVER1_IP"
+
+- name: Generate consistent log timestamp
+  set_fact:
+    log_timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+
+- name: Genelate log file name
+  set_fact:
+    log_file: "/tmp/output_{{ log_timestamp }}.log"
+
+- name: Run validation and save output to a timestamped log file
+  ansible.builtin.shell: |
+    /home/isucon/bench run \
+      --target https://pipe.u.isucon.local \
+      --nameserver {{ nameserver_ip }} \
+      --webapp {{ webapp_ip }} \
+      --enable-ssl \
+      --pretest-only \
+      > {{ log_file }} 2>&1
+  args:
+    executable: /bin/bash
+  vars:
+    nameserver_ip: "ISUCON_TRY_SERVER2_IP"
+    webapp_ip: "ISUCON_TRY_SERVER1_IP"
+
+- name: Fetch the log file to the local machine
+  fetch:
+    src: "{{ log_file }}"
+    dest: "../logs/"
+    flat: true
