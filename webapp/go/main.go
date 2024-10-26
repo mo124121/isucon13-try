@@ -62,7 +62,7 @@ func connectDB(logger echo.Logger) (*sqlx.DB, error) {
 	// 環境変数がセットされていなかった場合でも一旦動かせるように、デフォルト値を入れておく
 	// この挙動を変更して、エラーを出すようにしてもいいかもしれない
 	conf.Net = "tcp"
-	conf.Addr = net.JoinHostPort("57.180.245.77", "3306")
+	conf.Addr = net.JoinHostPort("ISUCON_TRY_SERVER3_IP", "3306")
 	conf.User = "isucon"
 	conf.Passwd = "isucon"
 	conf.DBName = "isupipe"

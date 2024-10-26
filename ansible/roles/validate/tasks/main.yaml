@@ -6,7 +6,7 @@
     line: "{{ webapp_ip }} pipe.u.isucon.local"
     regexp: "^{{ webapp_ip }}\\s+pipe.u.isucon.local"
   vars:
-    webapp_ip: "52.192.73.102"
+    webapp_ip: "ISUCON_TRY_SERVER1_IP"
 
 - name: Generate consistent log timestamp
   set_fact:
@@ -28,8 +28,8 @@
   args:
     executable: /bin/bash
   vars:
-    nameserver_ip: "43.206.213.137"
-    webapp_ip: "52.192.73.102"
+    nameserver_ip: "ISUCON_TRY_SERVER2_IP"
+    webapp_ip: "ISUCON_TRY_SERVER1_IP"
 
 - name: Fetch the log file to the local machine
   fetch:

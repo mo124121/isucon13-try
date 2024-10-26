@@ -23,5 +23,5 @@
     executable: /bin/bash
   with_items:
     - 'localhost'
-    - '52.192.73.102' # S1
-    - '43.206.213.137' # S2
+    - 'ISUCON_TRY_SERVER1_IP' # S1
+    - 'ISUCON_TRY_SERVER2_IP' # S2

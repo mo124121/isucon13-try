@@ -1,10 +1,10 @@
 all:
   vars:
     hosts_ips:
-      S1: 52.192.73.102
-      S2: 43.206.213.137
-      S3: 57.180.245.77
-      B: 52.195.233.170
+      S1: ISUCON_TRY_SERVER1_IP
+      S2: ISUCON_TRY_SERVER2_IP
+      S3: ISUCON_TRY_SERVER3_IP
+      B: ISUCON_TRY_BENCHMARKER_IP
 
   children:
     target:
