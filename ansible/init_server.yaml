@@ -4,7 +4,7 @@
 - name: Nginx
   ansible.builtin.import_playbook: deploy_nginx.yaml
 - name: Pprotein_agent
-  ansible.builtin.import_playbook: deploy_pprotein_agent.yaml
+  ansible.builtin.import_playbook: deploy_agent.yaml
 - name: Webapp
   ansible.builtin.import_playbook: deploy_web.yaml
 - name: Powerdns

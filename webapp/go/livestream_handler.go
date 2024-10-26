@@ -509,16 +509,37 @@ func getLivecommentReportsHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, reports)
 }
 
+var (
+	tagCache = sync.Map{}
+)
+
+func getTagModelsFromLivestreamID(ctx context.Context, tx *sqlx.Tx, livestreamID int) ([]*TagModel, error) {
+	if tagModels, ok := tagCache.Load(livestreamID); ok {
+		return tagModels.([]*TagModel), nil
+	}
+
+	var tagModels []*TagModel
+	if err := tx.SelectContext(ctx, &tagModels, "SELECT t.id,t.name FROM livestream_tags l JOIN tags t ON l.tag_id = t.id WHERE l.livestream_id = ?", livestreamID); err != nil {
+		return make([]*TagModel, 0), err
+	}
+
+	tagCache.Store(livestreamID, tagModels)
+
+	return tagModels, nil
+
+}
+
 func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel LivestreamModel) (Livestream, error) {
 	owner, err := getUser(ctx, tx, livestreamModel.UserID)
 	if err != nil {
 		return Livestream{}, err
 	}
 
-	var tagModels []*TagModel
-	if err := tx.SelectContext(ctx, &tagModels, "SELECT t.id,t.name FROM livestream_tags l JOIN tags t ON l.tag_id = t.id WHERE l.livestream_id = ?", livestreamModel.ID); err != nil {
+	tagModels, err := getTagModelsFromLivestreamID(ctx, tx, int(livestreamModel.ID))
+	if err != nil {
 		return Livestream{}, err
 	}
+
 	tags := make([]Tag, len(tagModels))
 	if len(tagModels) > 0 {
 		for i := range tagModels {

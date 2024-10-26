@@ -23,4 +23,5 @@
     executable: /bin/bash
   with_items:
     - 'localhost'
-    - '54.199.66.128' # S1
+    - '52.192.73.102' # S1
+    - '57.180.245.77' # S3

@@ -13,6 +13,14 @@
         name: webapp
         tasks_from: build
 
+- name: Configure pdns stuff
+  hosts: webapp
+  tasks:
+    - name: Deploy
+      ansible.builtin.import_role:
+        name: webapp
+        tasks_from: configure
+
 - name: Deploy remote
   hosts: webapp
   become_user: isucon

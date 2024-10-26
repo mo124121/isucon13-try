@@ -62,7 +62,7 @@ func connectDB(logger echo.Logger) (*sqlx.DB, error) {
 	// 環境変数がセットされていなかった場合でも一旦動かせるように、デフォルト値を入れておく
 	// この挙動を変更して、エラーを出すようにしてもいいかもしれない
 	conf.Net = "tcp"
-	conf.Addr = net.JoinHostPort("127.0.0.1", "3306")
+	conf.Addr = net.JoinHostPort("57.180.245.77", "3306")
 	conf.User = "isucon"
 	conf.Passwd = "isucon"
 	conf.DBName = "isupipe"
@@ -127,14 +127,15 @@ func initializeHandler(c echo.Context) error {
 	cacheLock.Lock()
 	userNameIconCache = sync.Map{}
 	livestreamModelCache = sync.Map{}
+	tagCache = sync.Map{}
 	cacheLock.Unlock()
 
-	//測定スタート
-	go func() {
-		if _, err := http.Get("https://stunning-giggle-579wr45v9p9hxx4-9000.app.github.dev/api/group/collect"); err != nil {
-			log.Printf("failed to communicate with pprotein: %v", err)
-		}
-	}()
+	// //測定スタート
+	// go func() {
+	// 	if _, err := http.Get("https://stunning-giggle-579wr45v9p9hxx4-9000.app.github.dev/api/group/collect"); err != nil {
+	// 		log.Printf("failed to communicate with pprotein: %v", err)
+	// 	}
+	// }()
 
 	c.Request().Header.Add("Content-Type", "application/json;charset=utf-8")
 	return c.JSON(http.StatusOK, InitializeResponse{

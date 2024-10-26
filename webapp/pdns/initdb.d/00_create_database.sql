@@ -5,11 +5,11 @@ DROP USER IF EXISTS `isudns`@`localhost`;
 CREATE USER 'isudns'@'localhost' IDENTIFIED BY 'isudns';
 GRANT ALL PRIVILEGES ON isudns.* TO 'isudns'@'localhost';
 
-DROP USER IF EXISTS `isudns`@`54.199.66.128`;
-CREATE USER 'isudns'@'54.199.66.128' IDENTIFIED BY 'isudns';
-GRANT ALL PRIVILEGES ON isudns.* TO 'isudns'@'54.199.66.128';
+DROP USER IF EXISTS `isudns`@`52.192.73.102`;
+CREATE USER 'isudns'@'52.192.73.102' IDENTIFIED BY 'isudns';
+GRANT ALL PRIVILEGES ON isudns.* TO 'isudns'@'52.192.73.102';
 
-DROP USER IF EXISTS `isudns`@`18.182.12.217`;
-CREATE USER 'isudns'@'18.182.12.217' IDENTIFIED BY 'isudns';
-GRANT ALL PRIVILEGES ON isudns.* TO 'isudns'@'18.182.12.217';
+DROP USER IF EXISTS `isudns`@`43.206.213.137`;
+CREATE USER 'isudns'@'43.206.213.137' IDENTIFIED BY 'isudns';
+GRANT ALL PRIVILEGES ON isudns.* TO 'isudns'@'43.206.213.137';
 
