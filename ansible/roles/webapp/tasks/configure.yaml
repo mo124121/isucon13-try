@@ -17,7 +17,6 @@
   with_items:
     - etc/powerdns/pdns.d/gmysql-host.conf
     - etc/powerdns/pdns.d/local.conf
-  notify: restart_pdns
 
 - name: Deploy record files
   become: true
