@@ -88,7 +88,15 @@ type PostIconResponse struct {
 	ID int64 `json:"id"`
 }
 
+var (
+	userNameIconCache = sync.Map{}
+)
+
 func getIconHashFromName(username string) (string, error) {
+	if hash, ok := userNameIconCache.Load(username); ok {
+		return hash.(string), nil
+	}
+
 	userDir := fmt.Sprintf("/var/www/icons/%s", username)
 	hashPath := filepath.Join(userDir, "icon.hash")
 	// ハッシュファイルの読み込み
@@ -103,6 +111,8 @@ func getIconHashFromName(username string) (string, error) {
 		}
 	}
 	iconHash := string(iconHashByte)
+
+	userNameIconCache.Store(username, iconHash)
 	return iconHash, nil
 }
 
@@ -515,6 +525,10 @@ func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (Us
 
 	return user, nil
 }
+
+var (
+	userCache = NewUserCache()
+)
 
 type UserCache struct {
 	mu    sync.Mutex

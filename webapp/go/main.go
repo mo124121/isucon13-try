@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"sync"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
@@ -31,7 +32,7 @@ var (
 	powerDNSSubdomainAddress string
 	dbConn                   *sqlx.DB
 	secret                   = []byte("isucon13_session_cookiestore_defaultsecret")
-	userCache                = NewUserCache()
+	cacheLock                = sync.Mutex{}
 )
 
 func init() {
@@ -123,6 +124,9 @@ func initializeHandler(c echo.Context) error {
 	}
 
 	userCache = NewUserCache()
+	cacheLock.Lock()
+	userNameIconCache = sync.Map{}
+	cacheLock.Unlock()
 
 	//測定スタート
 	go func() {
