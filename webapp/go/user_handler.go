@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -501,6 +503,12 @@ func calculateFallbackHash() (string, error) {
 }
 
 func fillUserResponse(ctx context.Context, tx *sqlx.Tx, userModel UserModel) (User, error) {
+	pc := make([]uintptr, 1)
+	runtime.Callers(0, pc)
+	function := runtime.FuncForPC(pc[0])
+	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, function.Name())
+	defer span.End()
+
 	themeModel := ThemeModel{}
 	if err := tx.GetContext(ctx, &themeModel, "SELECT * FROM themes WHERE user_id = ?", userModel.ID); err != nil {
 		return User{}, err
@@ -550,6 +558,12 @@ func (c *UserCache) Set(userID int64, user User) {
 }
 
 func (c *UserCache) Get(ctx context.Context, tx *sqlx.Tx, userID int64) (User, error) {
+	pc := make([]uintptr, 1)
+	runtime.Callers(0, pc)
+	function := runtime.FuncForPC(pc[0])
+	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, function.Name())
+	defer span.End()
+
 	c.mu.Lock()
 	v, ok := c.items[userID]
 	c.mu.Unlock()
@@ -571,10 +585,20 @@ func (c *UserCache) Delete(userID int64) {
 }
 
 func getUser(ctx context.Context, tx *sqlx.Tx, userID int64) (User, error) {
+	pc := make([]uintptr, 1)
+	runtime.Callers(0, pc)
+	function := runtime.FuncForPC(pc[0])
+	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, function.Name())
+	defer span.End()
 	return userCache.Get(ctx, tx, userID)
 }
 
 func getUserHeavy(ctx context.Context, tx *sqlx.Tx, userID int64) (User, error) {
+	pc := make([]uintptr, 1)
+	runtime.Callers(0, pc)
+	function := runtime.FuncForPC(pc[0])
+	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, function.Name())
+	defer span.End()
 
 	userModel := UserModel{}
 	if err := tx.GetContext(ctx, &userModel, "SELECT * FROM users WHERE id = ?", userID); err != nil {
@@ -607,6 +631,11 @@ func getUserHeavy(ctx context.Context, tx *sqlx.Tx, userID int64) (User, error) 
 }
 
 func getUsers(ctx context.Context, tx *sqlx.Tx, userIDs []int64) ([]User, error) {
+	pc := make([]uintptr, 1)
+	runtime.Callers(0, pc)
+	function := runtime.FuncForPC(pc[0])
+	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, function.Name())
+	defer span.End()
 	users := make([]User, len(userIDs))
 	if len(userIDs) == 0 {
 		return users, nil

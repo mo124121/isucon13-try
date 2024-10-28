@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
+	"go.opentelemetry.io/otel"
 )
 
 type PostLivecommentRequest struct {
@@ -393,6 +395,11 @@ func moderateHandler(c echo.Context) error {
 }
 
 func fillLivecommentResponse(ctx context.Context, tx *sqlx.Tx, livecommentModel LivecommentModel) (Livecomment, error) {
+	pc := make([]uintptr, 1)
+	runtime.Callers(0, pc)
+	function := runtime.FuncForPC(pc[0])
+	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, function.Name())
+	defer span.End()
 
 	commentOwner, err := getUser(ctx, tx, livecommentModel.UserID)
 	if err != nil {
@@ -421,6 +428,12 @@ func fillLivecommentResponse(ctx context.Context, tx *sqlx.Tx, livecommentModel 
 }
 
 func preloadLivecommentResponse(ctx context.Context, tx *sqlx.Tx, livecommentModels []LivecommentModel) ([]Livecomment, error) {
+	pc := make([]uintptr, 1)
+	runtime.Callers(0, pc)
+	function := runtime.FuncForPC(pc[0])
+	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, function.Name())
+	defer span.End()
+
 	livecomments := make([]Livecomment, len(livecommentModels))
 	if len(livecommentModels) == 0 {
 		return livecomments, nil
@@ -474,6 +487,12 @@ func preloadLivecommentResponse(ctx context.Context, tx *sqlx.Tx, livecommentMod
 }
 
 func fillLivecommentReportResponse(ctx context.Context, tx *sqlx.Tx, reportModel LivecommentReportModel) (LivecommentReport, error) {
+	pc := make([]uintptr, 1)
+	runtime.Callers(0, pc)
+	function := runtime.FuncForPC(pc[0])
+	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, function.Name())
+	defer span.End()
+
 	reporter, err := getUser(ctx, tx, reportModel.UserID)
 	if err != nil {
 		return LivecommentReport{}, err

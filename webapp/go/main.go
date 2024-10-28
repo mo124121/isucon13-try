@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/isucon/isucon13/webapp/go/isuutil"
+
 	"github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
@@ -21,6 +23,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	echolog "github.com/labstack/gommon/log"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
 )
 
 const (
@@ -95,11 +98,10 @@ func connectDB(logger echo.Logger) (*sqlx.DB, error) {
 		conf.ParseTime = parseTime
 	}
 
-	db, err := sqlx.Open("mysql", conf.FormatDSN())
+	db, err := isuutil.NewIsuconDB(conf)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(10)
 
 	if err := db.Ping(); err != nil {
 		return nil, err
@@ -144,6 +146,11 @@ func initializeHandler(c echo.Context) error {
 }
 
 func main() {
+	_, err := isuutil.InitializeTracerProvider()
+	if err != nil {
+		panic(err)
+	}
+
 	e := echo.New()
 	e.Debug = true
 	e.Logger.SetLevel(echolog.DEBUG)
@@ -152,6 +159,7 @@ func main() {
 	cookieStore.Options.Domain = "*.u.isucon.local"
 	e.Use(session.Middleware(cookieStore))
 	// e.Use(middleware.Recover())
+	e.Use(otelecho.Middleware("webapp"))
 
 	// output profile log
 	echov4.EnableDebugHandler(e)

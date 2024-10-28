@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
+	"go.opentelemetry.io/otel"
 )
 
 type ReserveLivestreamRequest struct {
@@ -74,6 +76,12 @@ var (
 )
 
 func getLivestreamModel(ctx context.Context, tx *sqlx.Tx, livestreamID int) (LivestreamModel, error) {
+	pc := make([]uintptr, 1)
+	runtime.Callers(0, pc)
+	function := runtime.FuncForPC(pc[0])
+	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, function.Name())
+	defer span.End()
+
 	if livestreamModel, ok := livestreamModelCache.Load(livestreamID); ok {
 		return livestreamModel.(LivestreamModel), nil
 	}
@@ -514,6 +522,9 @@ var (
 )
 
 func getTagModelsFromLivestreamID(ctx context.Context, tx *sqlx.Tx, livestreamID int) ([]*TagModel, error) {
+	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, "fillLivestreamResponse")
+	defer span.End()
+
 	if tagModels, ok := tagCache.Load(livestreamID); ok {
 		return tagModels.([]*TagModel), nil
 	}
@@ -530,6 +541,12 @@ func getTagModelsFromLivestreamID(ctx context.Context, tx *sqlx.Tx, livestreamID
 }
 
 func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel LivestreamModel) (Livestream, error) {
+	pc := make([]uintptr, 1)
+	runtime.Callers(0, pc)
+	function := runtime.FuncForPC(pc[0])
+	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, function.Name())
+	defer span.End()
+
 	owner, err := getUser(ctx, tx, livestreamModel.UserID)
 	if err != nil {
 		return Livestream{}, err
@@ -565,6 +582,12 @@ func fillLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModel Li
 }
 
 func preloadLivestreamResponse(ctx context.Context, tx *sqlx.Tx, livestreamModels []*LivestreamModel) ([]Livestream, error) {
+	pc := make([]uintptr, 1)
+	runtime.Callers(0, pc)
+	function := runtime.FuncForPC(pc[0])
+	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, function.Name())
+	defer span.End()
+
 	if len(livestreamModels) == 0 {
 		return make([]Livestream, 0), nil
 	}
