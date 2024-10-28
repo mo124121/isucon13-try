@@ -636,12 +636,28 @@ func getUsers(ctx context.Context, tx *sqlx.Tx, userIDs []int64) ([]User, error)
 	function := runtime.FuncForPC(pc[0])
 	ctx, span := otel.GetTracerProvider().Tracer("").Start(ctx, function.Name())
 	defer span.End()
+
 	users := make([]User, len(userIDs))
 	if len(userIDs) == 0 {
 		return users, nil
 	}
+
+	userIDrest := make([]int64, 0)
+	for _, id := range userIDs {
+		if _, ok := userCache.items[id]; !ok {
+			userIDrest = append(userIDrest, id)
+		}
+	}
+
+	if len(userIDrest) == 0 {
+		for i, id := range userIDs {
+			users[i] = userCache.items[id]
+		}
+		return users, nil
+	}
+
 	var userModels []UserModel
-	query, args, err := sqlx.In("SELECT * FROM users WHERE id IN (?)", userIDs)
+	query, args, err := sqlx.In("SELECT * FROM users WHERE id IN (?)", userIDrest)
 	if err != nil {
 		return nil, err
 	}
@@ -649,14 +665,14 @@ func getUsers(ctx context.Context, tx *sqlx.Tx, userIDs []int64) ([]User, error)
 		return nil, err
 	}
 	// UserID -> UserModelのマッピングを作成
-	userMap := make(map[int64]UserModel, len(userModels))
+	userMap := make(map[int64]UserModel)
 	for _, owner := range userModels {
 		userMap[owner.ID] = owner
 	}
 
 	// ユーザーのテーマとアイコンをプリロード
 	var themeModels []ThemeModel
-	query, args, err = sqlx.In("SELECT * FROM themes WHERE user_id IN (?)", userIDs)
+	query, args, err = sqlx.In("SELECT * FROM themes WHERE user_id IN (?)", userIDrest)
 	if err != nil {
 		return nil, echo.NewHTTPError(http.StatusInternalServerError, "failed to build theme query: "+err.Error())
 	}
@@ -678,24 +694,31 @@ func getUsers(ctx context.Context, tx *sqlx.Tx, userIDs []int64) ([]User, error)
 	}
 
 	for i, id := range userIDs {
-		userModel := userMap[id]
-		themeModel := themeMap[id]
-		iconhash := iconMap[id]
+		if user, ok := userCache.items[id]; ok {
+			users[i] = user
+		} else {
 
-		if value, exists := iconMap[id]; exists {
-			iconhash = value
-		}
+			userModel := userMap[id]
+			themeModel := themeMap[id]
+			iconhash := iconMap[id]
 
-		users[i] = User{
-			ID:          userModel.ID,
-			Name:        userModel.Name,
-			DisplayName: userModel.DisplayName,
-			Description: userModel.Description,
-			Theme: Theme{
-				ID:       themeModel.ID,
-				DarkMode: themeModel.DarkMode,
-			},
-			IconHash: iconhash,
+			if value, exists := iconMap[id]; exists {
+				iconhash = value
+			}
+
+			user := User{
+				ID:          userModel.ID,
+				Name:        userModel.Name,
+				DisplayName: userModel.DisplayName,
+				Description: userModel.Description,
+				Theme: Theme{
+					ID:       themeModel.ID,
+					DarkMode: themeModel.DarkMode,
+				},
+				IconHash: iconhash,
+			}
+			users[i] = user
+			userCache.Set(id, user)
 		}
 	}
 
